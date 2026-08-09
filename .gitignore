@@ -1,0 +1,19 @@
+# credentials — never commit
+*id_ed25519*
+*id_rsa*
+*.pem
+*.key
+.env
+
+# large artifacts: regenerate or download on the cluster
+*.pt
+*.safetensors
+*.bin
+*.ckpt
+
+# run artifacts
+logs/
+__pycache__/
+*.pyc
+nohup.out
+slurm-*.out
