@@ -10,13 +10,22 @@ import sys
 
 import torch
 
+# Match production: disable the cuDNN SDPA backend that fails on this cluster.
+try:
+    torch.backends.cuda.enable_cudnn_sdp(False)
+except Exception as e:  # noqa: BLE001
+    print("enable_cudnn_sdp(False) raised:", e)
+
 print("python          :", sys.version.split()[0])
 print("torch           :", torch.__version__)
 print("torch cuda      :", torch.version.cuda)
-print("cudnn (torch)   :", torch.backends.cudnn.version())
 print("device          :", torch.cuda.get_device_name(0))
 print("capability      :", torch.cuda.get_device_capability(0))
 print("LD_LIBRARY_PATH :", os.environ.get("LD_LIBRARY_PATH", "<unset>"))
+try:
+    print("cudnn (torch)   :", torch.backends.cudnn.version())
+except Exception as e:  # noqa: BLE001
+    print("cudnn (torch)   : unavailable:", e)
 
 print("\n--- installed nvidia wheels ---")
 out = subprocess.run([sys.executable, "-m", "pip", "list"], capture_output=True, text=True)

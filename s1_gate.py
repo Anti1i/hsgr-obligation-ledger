@@ -46,8 +46,15 @@ def analyze(out_dir, gate):
     roots = {r["id"]: r for r in jread_glob(d, "rootcands.s*.jsonl")}
 
     ids = sorted(i for i in dec if dec[i].get("subquestions") and i in aggs)
-    n = max(1, len(ids))
-    c = Counter()
+    keys = ("oracle_assign", "oracle_root", "oracle_union", "only_decomp",
+            "only_root", "hard_commit", "dch_freq", "cot_greedy", "sc5")
+    c = Counter({k: 0 for k in keys})
+    if not ids:
+        print(f"== S1 gate: {out_dir} (0 usable problems) ==")
+        print("  GATE: FAIL (no usable aggregate outputs; pipeline likely crashed)")
+        return {**{k: 0.0 for k in keys}, "n_problems": 0,
+                "gate_value": 0.0, "gate_pass": False}
+    n = len(ids)
     for pid in ids:
         gold = dec[pid]["gold"]
         rows = aggs[pid]

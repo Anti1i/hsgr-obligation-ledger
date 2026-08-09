@@ -28,6 +28,8 @@ export XDG_CACHE_HOME="$SCR/xdg"
 export TMPDIR="$SCR/tmp"
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
+# Prefer pip-bundled CUDA libs over any system cuDNN that may be on the node.
+unset LD_LIBRARY_PATH || true
 
 [ -x "$PY" ] || { echo "FATAL: no venv at $PY -- run slurm_setup.sbatch first"; exit 1; }
 mkdir -p "$WORK" "$TMPDIR"
@@ -40,11 +42,31 @@ echo "repo commit: $(git -C "$REPO" rev-parse --short HEAD)"
 echo "scratch    : $SCR  ($(df -h --output=avail /mnt/scratch | tail -1 | tr -d ' ') free)"
 nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
 
-# Refresh code into the scratch working copy without touching accumulated outputs.
+# Refresh code into the scratch working copy. Scratch is NFS and does not
+# support preserving all permission bits, so use -r (not -a).
 echo "=== sync code -> $WORK ==="
-cp -a "$REPO/." "$WORK/"
+cp -r "$REPO/." "$WORK/"
 cd "$WORK" || exit 1
-"$PY" -c "import torch; print('visible GPUs:', torch.cuda.device_count())"
+
+# Wipe empty/failed outputs from a previous crashed run so shards do not
+# resume from zero-length files and falsely report "done".
+for d in outputs_deep2 outputs_mathl5; do
+  if [ -d "$d" ]; then
+    nlines=$(find "$d" -name '*.jsonl' -type f -exec cat {} + 2>/dev/null | wc -l)
+    if [ "${nlines:-0}" -lt 10 ]; then
+      echo "wiping incomplete $d ($nlines lines)"
+      rm -rf "$d"
+    fi
+  fi
+done
+
+"$PY" - <<'EOF'
+import torch
+torch.backends.cuda.enable_cudnn_sdp(False)
+print("torch", torch.__version__, "cuda", torch.version.cuda,
+      "gpus", torch.cuda.device_count(),
+      "name", torch.cuda.get_device_name(0) if torch.cuda.is_available() else None)
+EOF
 
 echo "=== data prep ==="
 "$PY" data_prep.py --which all --data-dir data

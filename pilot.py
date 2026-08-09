@@ -63,6 +63,14 @@ class Runner:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
+        # Torch 2.13+cu130's cuDNN SDPA backend hits
+        # CUDNN_STATUS_SUBLIBRARY_VERSION_MISMATCH on this cluster's H100/H200
+        # nodes; fall through to flash / mem-efficient / math.
+        try:
+            torch.backends.cuda.enable_cudnn_sdp(False)
+        except Exception:
+            pass
+
         t0 = time.time()
         self.tok = AutoTokenizer.from_pretrained(model_id, padding_side="left")
         if self.tok.pad_token is None:
