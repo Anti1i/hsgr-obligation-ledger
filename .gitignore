@@ -13,6 +13,8 @@
 
 # run artifacts
 logs/
+results/
+*.out
 __pycache__/
 *.pyc
 nohup.out
