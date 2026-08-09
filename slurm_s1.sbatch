@@ -19,7 +19,8 @@ set -uo pipefail
 
 REPO="$HOME/dch-hsgr"
 SCR="/mnt/scratch/z/${USER}/dch-hsgr"
-WORK="$SCR/work"
+# Per-job working copy so two concurrent S1 submissions cannot clobber each other.
+WORK="$SCR/work-${SLURM_JOB_NAME}-${SLURM_JOB_ID}"
 PY="$SCR/venv/bin/python"
 
 export HF_HOME="$SCR/hf"
@@ -42,23 +43,15 @@ echo "repo commit: $(git -C "$REPO" rev-parse --short HEAD)"
 echo "scratch    : $SCR  ($(df -h --output=avail /mnt/scratch | tail -1 | tr -d ' ') free)"
 nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
 
-# Refresh code into the scratch working copy. Scratch is NFS and does not
-# support preserving all permission bits, so use -r (not -a).
 echo "=== sync code -> $WORK ==="
+mkdir -p "$WORK"
+# Fresh copy every run (per-job dir); NFS does not support cp -a.
 cp -r "$REPO/." "$WORK/"
+# Seed prior pilot outputs if present (for G1/G3 later); S1 dirs start clean.
+if [ -d "$SCR/work/outputs" ] && [ ! -d "$WORK/outputs" ]; then
+  cp -r "$SCR/work/outputs" "$WORK/" 2>/dev/null || true
+fi
 cd "$WORK" || exit 1
-
-# Wipe empty/failed outputs from a previous crashed run so shards do not
-# resume from zero-length files and falsely report "done".
-for d in outputs_deep2 outputs_mathl5; do
-  if [ -d "$d" ]; then
-    nlines=$(find "$d" -name '*.jsonl' -type f -exec cat {} + 2>/dev/null | wc -l)
-    if [ "${nlines:-0}" -lt 10 ]; then
-      echo "wiping incomplete $d ($nlines lines)"
-      rm -rf "$d"
-    fi
-  fi
-done
 
 "$PY" - <<'EOF'
 import torch
