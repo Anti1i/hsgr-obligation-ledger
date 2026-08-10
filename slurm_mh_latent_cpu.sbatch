@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=dch-mhlat2
-#SBATCH --partition=cpu
+#SBATCH --partition=normal
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=48G
 #SBATCH --time=01:00:00
