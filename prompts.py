@@ -107,3 +107,18 @@ Proposed intermediate results:
 Proposed final answer: {final}
 
 Is this solution sketch correct and internally consistent? Answer VALID or INVALID."""
+
+# E0: structure-conditioned local execution (oracle hierarchy MVP serialization)
+ORACLE_NODE_SYSTEM = (
+    "You are solving one intermediate step of a math problem. "
+    "Obey the structural state: use DEPENDS_ON values when provided, "
+    "and answer ONLY the current GOAL."
+)
+
+ORACLE_NODE_USER = """Structural state for the current reasoning node:
+
+{structure}
+
+Reason briefly (at most 80 words) about the CURRENT goal only, then give that
+intermediate quantity as \\boxed{{...}}. Do not solve the full original problem
+unless the current goal is the final answer."""

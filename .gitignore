@@ -4,6 +4,8 @@
 *.pem
 *.key
 .env
+jingbo
+*jingbo*
 
 # large artifacts: regenerate or download on the cluster
 *.pt
@@ -15,6 +17,10 @@
 logs/
 results/
 *.out
+data/gsm_oracle*.jsonl
+e0_*/
+dd_*/
+
 __pycache__/
 *.pyc
 nohup.out
