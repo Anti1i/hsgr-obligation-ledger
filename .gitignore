@@ -27,6 +27,8 @@ mh_ceil*/
 mh_ceiling_report.json
 mh_e0*/
 mh_e0_report.json
+mh_latent*/
+mh_latent_report.json
 e0_report_*.json
 
 __pycache__/
