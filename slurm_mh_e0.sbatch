@@ -27,6 +27,12 @@ echo "host $(hostname) job ${SLURM_JOB_ID} commit $(git -C "$REPO" rev-parse --s
 nvidia-smi --query-gpu=index,name,memory.total --format=csv
 cp -r "$REPO/." "$WORK/"
 cd "$WORK" || exit 1
+# Prefer scratch-cached MuSiQue with support paragraphs (avoids stale home copy).
+if [ -f "$SCR/data/musique_ans_val.jsonl" ]; then
+  mkdir -p data
+  cp -f "$SCR/data/musique_ans_val.jsonl" data/
+  echo "seeded musique from $SCR/data"
+fi
 "$PY" - <<'EOF'
 import torch
 torch.backends.cuda.enable_cudnn_sdp(False)
