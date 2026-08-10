@@ -52,8 +52,19 @@
 #   Ranking signal is readable; neither argmax nor weighted voting establishes
 #   a selection gain. The cheap linear latent-probe line stops here.
 #
-# NEXT: stop-loss on the cheap latent-verifier line. Options:
-#   (a) stronger verifier (generative critique / pairwise) — cost up, claim shifts;
-#   (b) scale n to settle the +2.5pp / structure +5pp residues;
-#   (c) rewrite the proposal around what survived (V3 readability + selection gap
-#       as open problem), not around structure-as-control or latent rerank gains.
+# HSGR DEPENDENCY-USE LATENT GUIDE (job 724723, H100) — GATE FAIL
+#   40 calibration / 160 held-out; selected feature layer 21, beta=0.20.
+#   held-out: base=0.519  text-guide=0.488  latent=0.494  anti=0.494
+#   latent vs base: -0.025, latent-only=4 base-only=8, exact p=0.388
+#   latent vs anti: 0.000, each-only=12, exact p=1.000
+#   A fixed instruction-contrast direction has no dependency-specific causal
+#   effect. A true online structural-residual reader/controller remains untested.
+#   Do not run more steering unless a natural pre-answer dependency-compliance
+#   reader first passes a held-out AUROC >=0.75 gate.
+#
+# NEXT: stop-loss on fixed steering and cheap latent reranking. Options:
+#   (a) diagnostic only: a natural pre-answer dependency-compliance reader;
+#       require held-out AUROC >=0.75 before any online residual steering;
+#   (b) stronger verifier / larger n — cost up and claim shifts;
+#   (c) rewrite around the falsifications, V3 readability, and the unresolved
+#       selection gap; do not claim that HSGR Guide is already effective.
