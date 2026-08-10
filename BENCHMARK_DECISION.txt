@@ -36,7 +36,16 @@
 #   mapping, so it cannot capture the one large real effect.
 # E2 (decomposition-level candidate domain): ON HOLD, same reason.
 #
-# NEXT (E2'): latent verifier reranking the existing 8 samples/problem.
-#   Real headroom here is oracle@8 - SC@8 = +18.5pp, needs no oracle structure
-#   and no gold paragraphs, and aligns with V3 (hidden-state probe AUROC 0.842).
-#   Gate: close >=1/3 of the gap (>= +6pp over SC@8) with McNemar p<0.05.
+# E2' LATENT VERIFIER (job 724632, H100) — GATE FAIL
+#   Setup: verify-prompt last-token hiddens, 5-fold OOF logistic+rank probe, argmax.
+#   best layer=14  OOF wp-AUROC=0.730 (n=88 mixed)  pooled AUROC=0.770
+#   SC@1=0.440  SC@8=0.500  probe=0.525  oracle@8=0.685
+#   delta vs SC@8 = +0.025 (closes 13.5% of 18.5pp gap; need >=33%)
+#   McNemar p=0.499  GATE FAIL
+#   Ranking signal is real; selection gain is not. Linear latent probe stops here.
+#
+# NEXT: stop-loss on the cheap latent-verifier line. Options:
+#   (a) stronger verifier (generative critique / pairwise) — cost up, claim shifts;
+#   (b) scale n to settle the +2.5pp / structure +5pp residues;
+#   (c) rewrite the proposal around what survived (V3 readability + selection gap
+#       as open problem), not around structure-as-control or latent rerank gains.
