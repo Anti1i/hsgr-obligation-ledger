@@ -23,6 +23,8 @@ data/musique*.jsonl
 e0_*/
 dd_*/
 mh_screen_*.json
+mh_ceil*/
+mh_ceiling_report.json
 
 __pycache__/
 *.pyc

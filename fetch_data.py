@@ -113,6 +113,7 @@ def fetch_musique(force=False, limit=0):
                 "answer": r["answer"],
                 "answer_aliases": list(r.get("answer_aliases") or []),
                 "question_decomposition": list(r["question_decomposition"]),
+                "paragraphs": list(r.get("paragraphs") or []),
                 "n_paragraphs": len(r.get("paragraphs") or []),
             })
             if limit and len(rows) >= limit:
@@ -144,13 +145,29 @@ def fetch_musique(force=False, limit=0):
         if r.get("answerable") is False:
             continue
         decomp = r.get("question_decomposition") or []
+        # Keep supporting paragraphs only (full corpus is large / unused for
+        # the open-book ceiling which uses gold supports).
+        paras = r.get("paragraphs") or []
+        support_idxs = {
+            step.get("paragraph_support_idx")
+            for step in decomp
+            if step.get("paragraph_support_idx") is not None
+        }
+        slim_paras = []
+        for i, p in enumerate(paras):
+            idx = p.get("idx", i) if isinstance(p, dict) else i
+            if idx in support_idxs or (isinstance(p, dict) and p.get("is_supporting")):
+                slim_paras.append(p if isinstance(p, dict) else {
+                    "idx": i, "paragraph_text": str(p), "title": ""
+                })
         rows.append({
             "id": r.get("id"),
             "question": r["question"],
             "answer": r.get("answer") or (r.get("golden_answers") or [None])[0],
             "answer_aliases": list(r.get("answer_aliases") or r.get("golden_answers") or []),
             "question_decomposition": decomp,
-            "n_paragraphs": len(r.get("paragraphs") or []),
+            "paragraphs": slim_paras,
+            "n_paragraphs": len(paras),
         })
         if limit and len(rows) >= limit:
             break
