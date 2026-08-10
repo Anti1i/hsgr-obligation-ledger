@@ -46,6 +46,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", required=True)
     ap.add_argument("--data", required=True)
+    ap.add_argument("--suffix", default="",
+                    help="'' for evidence=hop arm, '_evall' for the matched-evidence arm")
     a = ap.parse_args()
 
     rows = load_rows(a.data, 200)
@@ -53,8 +55,12 @@ def main():
 
     hops = {m: {} for m in ("predicted", "oracle")}
     for m in hops:
-        for r in jread(os.path.join(a.dir, f"hops_{m}.s0.jsonl")):
+        f = os.path.join(a.dir, f"hops_{m}{a.suffix}.s0.jsonl")
+        if not os.path.exists(f):
+            raise SystemExit(f"missing {f}")
+        for r in jread(f):
             hops[m].setdefault(r["id"], {})[r["hop"]] = r
+    print(f"[stats] arm = evidence={'hop' if not a.suffix else 'all'}")
     sc = {r["id"]: r for r in jread(os.path.join(a.dir, "sc.s0.jsonl"))}
 
     ids = [u for u in by_uid if u in sc and u in hops["predicted"]]
@@ -90,6 +96,37 @@ def main():
         print(f"  {x:5s} vs {y:5s}: delta={d:+.3f}  "
               f"{x}-only={xo} {y}-only={yo}  chi2={chi2:.2f} p={p:.4f}  [{sig}]")
 
+    # SC@k curve, subsampled from the 8 stored candidates. The hop pipeline
+    # re-sends evidence once per hop (~2.6 hops), so its true cost sits near
+    # SC@3, not SC@1 -- this is the budget-matched comparison point.
+    print("\n== SC@k curve (subsampled from stored 8 candidates, 200 reps) ==")
+    rng = random.Random(0)
+    curve = {}
+    for k in range(1, 9):
+        accs = []
+        for _ in range(200):
+            hit = 0
+            for u in ids:
+                rec = sc[u]
+                cands = rec["cands"]
+                pick = rng.sample(cands, k) if k < len(cands) else cands
+                vote = Counter(c["norm"] for c in pick if c["norm"])
+                if not vote:
+                    continue
+                top = vote.most_common(1)[0][0]
+                if answers_match(top, rec["gold"], rec.get("aliases") or []):
+                    hit += 1
+            accs.append(hit / n)
+        curve[k] = sum(accs) / len(accs)
+        print(f"  SC@{k} = {curve[k]:.3f}")
+    hops_per_problem = sum(len(by_uid[u]["question_decomposition"]) for u in ids) / n
+    kbud = max(1, round(hops_per_problem))
+    print(f"\n  mean hops/problem = {hops_per_problem:.2f} "
+          f"-> budget-matched baseline ~ SC@{kbud} = {curve[kbud]:.3f}")
+    for name in ("pred", "ora"):
+        d = sum(res[name].values()) / n - curve[kbud]
+        print(f"  {name} vs SC@{kbud} (budget-matched): {d:+.3f}")
+
     # Confound probe: how much evidence targeting does the gold decomposition give?
     print("\n== evidence-targeting confound ==")
     n_para = []
@@ -124,9 +161,11 @@ def main():
 
     rep = {"n": n,
            "acc": {k: sum(v.values()) / n for k, v in res.items()},
+           "sc_curve": curve, "hops_per_problem": hops_per_problem,
+           "budget_k": kbud,
            "support_paras_mean": sum(n_para) / max(1, len(n_para))}
     out = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                       "mh_e0_stats.json")
+                       f"mh_e0_stats{a.suffix}.json")
     with open(out, "w") as f:
         json.dump(rep, f, indent=1)
     print(f"\nsaved {out}")

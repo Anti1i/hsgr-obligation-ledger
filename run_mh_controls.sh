@@ -39,6 +39,8 @@ $PY mh_e0.py --data data/musique_ans_val.jsonl --out-dir mh_e0 \
   ${REUSE:+--reuse-sc "$REUSE"} \
   | tee logs/mh_e0_evhop.txt
 
-echo "=== control C: paired significance (evidence=hop) ==="
+echo "=== control C: paired significance + SC@k budget curve ==="
 $PY mh_e0_stats.py --dir mh_e0 --data data/musique_ans_val.jsonl \
-  | tee logs/mh_e0_stats.txt
+  | tee logs/mh_e0_stats_evhop.txt
+$PY mh_e0_stats.py --dir mh_e0 --data data/musique_ans_val.jsonl --suffix _evall \
+  | tee logs/mh_e0_stats_evall.txt
