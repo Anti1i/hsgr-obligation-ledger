@@ -1,6 +1,15 @@
-# Benchmark decision (2026-08-10)
-# GSM8K-deep: SC@1=0.90, decomposition tax=+11.3pp → no headroom
-# MuSiQue ans-dev (open-book gold supports, n=200, Qwen2.5-7B-Instruct):
-#   SC@1=0.440  SC@8=0.500  oracle@8=0.685  gap=+0.245  band PASS
-#   structure: mean depth 2.65, reconvergence 14.5%
-# DECISION: adopt MuSiQue as primary benchmark; next gate = mh_e0
+# Benchmark decision (2026-08-10 evening)
+# Model: Qwen2.5-7B-Instruct
+#
+# GSM8K-deep (socratic E0, n=300):
+#   SC@1=0.900  oracle-hops=0.787  tax=+0.113  → no headroom
+#
+# MuSiQue ans-dev open-book gold supports (n=200):
+#   structure: depth=2.65  reconvergence=14.5%
+#   SC@1=0.440  SC@8=0.500  oracle@8=0.685  band PASS
+#   E0 gold-decomp: predicted=0.535  oracle=0.640
+#   predicted - SC@1 = +0.095   tax(SC1-oracle)= -0.200
+#   HEADROOM GATE: PASS
+#
+# DECISION: MuSiQue is the primary benchmark.
+# NEXT: E1 structure prediction (no gold decomp); then decomp-level candidates + latent probe.
