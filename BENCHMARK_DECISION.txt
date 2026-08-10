@@ -42,7 +42,15 @@
 #   SC@1=0.440  SC@8=0.500  probe=0.525  oracle@8=0.685
 #   delta vs SC@8 = +0.025 (closes 13.5% of 18.5pp gap; need >=33%)
 #   McNemar p=0.499  GATE FAIL
-#   Ranking signal is real; selection gain is not. Linear latent probe stops here.
+#
+# E2' PROBE-WEIGHTED VOTE (job 724678, CPU) — GATE FAIL
+#   score(answer) = vote_fraction + lambda * mean within-problem z(probe)
+#   lambda selected out-of-fold: 0.2 / 0.3 / 0.3 / 0.2 / 0.2
+#   SC@8=0.500  combined=0.530  delta=+0.030
+#   paired changes: combined-only=14  SC@8-only=8  McNemar p=0.286
+#   preregistered gate: >=+0.060 AND p<0.05  -> FAIL
+#   Ranking signal is readable; neither argmax nor weighted voting establishes
+#   a selection gain. The cheap linear latent-probe line stops here.
 #
 # NEXT: stop-loss on the cheap latent-verifier line. Options:
 #   (a) stronger verifier (generative critique / pairwise) — cost up, claim shifts;
