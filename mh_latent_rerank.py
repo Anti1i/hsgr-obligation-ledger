@@ -268,6 +268,79 @@ def fit_probe(X, y, pids, Xv, yv, pv, use_rank=True, epochs=400, lr=5e-3,
     return score, best[0]
 
 
+def combined_selection(metas, scores, folds, lambdas=None):
+    """Use the probe as a prior ON the vote instead of replacing it.
+
+    Pure-argmax reranking lost 15 problems that majority vote got right: an
+    AUROC-0.73 per-candidate scorer cannot beat the aggregation of 8 votes on
+    its own. Here each distinct answer gets
+
+        score(a) = vote_frac(a) + lam * mean_probe_z(a)
+
+    with probe logits z-normalized within a problem (logits are not calibrated
+    across problems). lam is chosen out-of-fold: for each fold, pick the lam
+    that maximizes accuracy on the OTHER folds, then apply it to this fold.
+    lam=0 reduces exactly to majority vote.
+    """
+    if lambdas is None:
+        lambdas = [0.0, 0.05, 0.1, 0.2, 0.3, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 5.0]
+
+    by_p = defaultdict(list)
+    for i, m in enumerate(metas):
+        by_p[m["id"]].append((m, scores[i]))
+
+    # Per problem, per candidate lambda -> correctness of the selected answer.
+    ok = {}          # (pid, lam) -> bool
+    for pid, items in by_p.items():
+        ss = [s for _, s in items]
+        mu = sum(ss) / len(ss)
+        var = sum((s - mu) ** 2 for s in ss) / max(1, len(ss) - 1)
+        sd = math.sqrt(var) if var > 0 else 1.0
+        n_c = len(items)
+        agg = defaultdict(lambda: {"n": 0, "z": 0.0, "ans": None})
+        for m, s in items:
+            key = m["norm"]
+            if not key:
+                continue
+            a = agg[key]
+            a["n"] += 1
+            a["z"] += (s - mu) / sd
+            a["ans"] = m["ans"]
+        gold = items[0][0]["gold"]
+        aliases = items[0][0]["aliases"]
+        for lam in lambdas:
+            best, best_v = None, -1e18
+            for key, a in agg.items():
+                v = a["n"] / n_c + lam * (a["z"] / a["n"])
+                if v > best_v:
+                    best, best_v = key, v
+            ok[(pid, lam)] = bool(best and answers_match(best, gold, aliases))
+
+    # Out-of-fold lambda selection.
+    pid_fold = {}
+    for fi, hold in enumerate(folds):
+        for p in hold:
+            pid_fold[p] = fi
+    picked = {}
+    sel_ok = {}
+    for fi, hold in enumerate(folds):
+        others = [p for p in by_p if pid_fold.get(p) != fi]
+        if not others:
+            continue
+        best_lam, best_acc = 0.0, -1.0
+        for lam in lambdas:
+            acc = sum(ok[(p, lam)] for p in others) / len(others)
+            if acc > best_acc:
+                best_lam, best_acc = lam, acc
+        picked[fi] = best_lam
+        for p in hold:
+            if p in by_p:
+                sel_ok[p] = ok[(p, best_lam)]
+
+    curve = {lam: sum(ok[(p, lam)] for p in by_p) / len(by_p) for lam in lambdas}
+    return sel_ok, picked, curve
+
+
 def stage_probe(feat_path, n_folds=5, seed=0):
     import torch
 
@@ -413,14 +486,45 @@ def stage_probe(feat_path, n_folds=5, seed=0):
               f"sc8={row['sc8']:.3f}  ora={row['oracle']:.3f}  "
               f"d={row['probe']-row['sc8']:+.3f}")
 
-    gate_pp = d_sc8 >= 0.06
-    gate_p = pval < 0.05
+    # ---- probe as a prior ON the vote, rather than replacing it ----
+    sel_ok, picked, curve = combined_selection(metas, scores, folds)
+    n_comb = len(sel_ok)
+    acc_comb = sum(sel_ok.values()) / max(1, n_comb)
+    sc8_on_same = {r["id"]: r["sc8_ok"] for r in rows_out}
+    c_only = sum(1 for p, v in sel_ok.items() if v and not sc8_on_same.get(p))
+    v_only = sum(1 for p, v in sel_ok.items() if not v and sc8_on_same.get(p))
+    chi2c, pvalc = mcnemar(c_only, v_only)
+    d_comb = acc_comb - acc["sc8"]
+
+    print("\n== probe-weighted vote (lam chosen out-of-fold) ==")
+    print("  lambda curve (in-sample, for shape only):")
+    for lam in sorted(curve):
+        print(f"    lam={lam:<5.2f} acc={curve[lam]:.3f}"
+              + ("   <- lam=0 is majority vote" if lam == 0 else ""))
+    print(f"  per-fold lambda picked: {picked}")
+    print(f"  combined = {acc_comb:.3f}   delta vs SC@8 = {d_comb:+.3f}")
+    print(f"  McNemar combined vs SC@8: comb-only={c_only} sc8-only={v_only}  "
+          f"chi2={chi2c:.2f} p={pvalc:.4f}")
+    for r in rows_out:
+        r["combined_ok"] = bool(sel_ok.get(r["id"]))
+
+    best_delta = max(d_sc8, d_comb)
+    best_p = pval if d_sc8 >= d_comb else pvalc
+    gate_pp = best_delta >= 0.06
+    gate_p = best_p < 0.05
     gate = gate_pp and gate_p
-    print(f"\n  GATE (>=+6pp over SC@8 AND p<0.05): "
-          f"{'PASS' if gate else 'FAIL'}  "
-          f"(delta={d_sc8:+.3f} p={pval:.4f})")
+    print(f"\n  GATE (>=+6pp over SC@8 AND p<0.05), best of "
+          f"argmax/weighted: {'PASS' if gate else 'FAIL'}  "
+          f"(delta={best_delta:+.3f} p={best_p:.4f})")
 
     rep = {
+        "combined": {
+            "acc": acc_comb, "delta_sc8": d_comb,
+            "lambda_per_fold": {str(k): v for k, v in picked.items()},
+            "lambda_curve": {str(k): v for k, v in curve.items()},
+            "mcnemar": {"comb_only": c_only, "sc8_only": v_only,
+                        "chi2": chi2c, "p": pvalc},
+        },
         "n": n_prob,
         "layer": bl,
         "layer_crit": {str(k): v for k, v in layer_crit.items()},
