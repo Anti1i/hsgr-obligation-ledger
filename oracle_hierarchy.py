@@ -5,12 +5,15 @@ step i's expression literally uses the numeric value produced by an earlier
 step j (longest-match, same rule as data_prep.re_evaluate). This is the true
 sequential structure the independent-subquestion prompt was forbidden to use.
 
-Natural-language goals are taken from the solution sentence that contains the
-annotation (formula stripped), so the model is not handed the expression.
+Natural-language goals should come from GSM8K-socratic (human/model
+subquestions before each `**`), not from scrubbing numbers out of the main
+solution prose — that scrubbing produced unanswerable fragments and invalidated
+the first E0 run.
 
 Usage:
-  python oracle_hierarchy.py --data data/gsm8k_test.jsonl --out data/gsm_oracle_test.jsonl
-  python oracle_hierarchy.py --data data/gsm_deep_test.jsonl --out data/gsm_oracle_deep.jsonl
+  python oracle_hierarchy.py --data data/gsm_deep_test.jsonl \\
+      --out data/gsm_oracle_soc.jsonl --goal-source data/gsm8k_socratic_test.jsonl \\
+      --goal-mode socratic
 """
 from __future__ import annotations
 
@@ -31,23 +34,44 @@ def _to_frac(s):
     return v
 
 
-def sentence_goals(answer_text, n_steps):
-    """One NL goal string per annotation, from the surrounding solution prose.
+def socratic_goals(answer_text, n_steps):
+    """Extract the Socratic subquestion before each <<expr=value>> annotation.
 
-    Prefer the descriptive phrase AFTER the annotation (usually the unit /
-    quantity name). Scrub the step's own gold value and inline arithmetic so
-    the goal does not leak the answer.
+    Canonical format (openai/gsm8k socratic):
+      How many clips did Natalia sell in May? ** Natalia sold 48/2 = <<48/2=24>>24 ...
+    The goal is the text before `**` — no gold-value scrubbing required.
     """
+    goals = []
+    remaining = answer_text
+    for _ in range(n_steps):
+        m = STEP_RE.search(remaining)
+        if not m:
+            goals.append(None)
+            continue
+        block_start = remaining.rfind("\n", 0, m.start()) + 1
+        block = remaining[block_start:m.start()]
+        if "**" in block:
+            goal = block.split("**", 1)[0].strip()
+        else:
+            # Rare non-socratic line: take leading prose, drop trailing arith.
+            goal = re.sub(
+                r"[\d.,]+\s*([+\-*/×x]\s*[\d.,]+\s*)*=?\s*\$?\s*$", "", block
+            ).strip(" .:")
+        goal = re.sub(r"\s+", " ", goal).strip()
+        goals.append(goal or None)
+        remaining = remaining[m.end():]
+    return goals
+
+
+def sentence_goals(answer_text, n_steps):
+    """Legacy prose-scrub goals. Prefer socratic_goals; kept for comparison."""
     goals = []
     remaining = answer_text
 
     def strip_value_prefix(text, val):
-        """Drop a leading copy of `val`, allowing thousand separators."""
         t = text.lstrip()
-        # exact
         if t.startswith(val):
             return t[len(val):].lstrip(" .")
-        # with commas: 130000 ↔ 130,000
         if val.isdigit():
             with_comma = f"{int(val):,}"
             if t.startswith(with_comma):
@@ -68,7 +92,6 @@ def sentence_goals(answer_text, n_steps):
             end = len(remaining)
         before = remaining[start:m.start()]
         after = strip_value_prefix(remaining[m.end():end], val).strip(" .")
-        # Leading prose: drop trailing arithmetic `... = `
         before = re.sub(r"[\d.,]+\s*([+\-*/×x]\s*[\d.,]+\s*)*=?\s*\$?\s*$", "", before)
         before = before.strip(" .:")
         if after and len(after) >= 3 and not re.fullmatch(r"[\d.,]+", after):
@@ -77,7 +100,6 @@ def sentence_goals(answer_text, n_steps):
             desc = before
         else:
             desc = "the intermediate quantity required at this step"
-        # Scrub remaining copies of this step's value
         variants = {val}
         if val.isdigit():
             variants.add(f"{int(val):,}")
@@ -183,22 +205,48 @@ def row_to_oracle(r):
     }
 
 
-def build(data_path, out_path, min_steps=1, limit=0, goal_source=None):
-    """If goal_source is a raw gsm8k jsonl, NL goals are taken from its
-    solution prose by matching on question/problem text. Otherwise goals fall
-    back to expression-templated strings (weaker, leaks the calc)."""
+def _goal_quality(goals):
+    """Cheap diagnostics: are goals actually answerable questions?"""
+    n = len(goals)
+    if not n:
+        return {}
+    lens = [len(g or "") for g in goals]
+    ends_q = sum(1 for g in goals if g and g.rstrip().endswith("?"))
+    has_qmark_scrub = sum(1 for g in goals if g and re.search(r"\?\s*$", g) is None and "?" in (g or ""))
+    short = sum(1 for g in goals if not g or len(g) < 20 or g.count(" ") < 3)
+    return {
+        "n": n,
+        "mean_len": sum(lens) / n,
+        "pct_endswith_?": ends_q / n,
+        "pct_short": short / n,
+        "pct_internal_?": has_qmark_scrub / n,
+    }
+
+
+def build(data_path, out_path, min_steps=1, limit=0, goal_source=None,
+          goal_mode="socratic"):
+    """Attach NL goals from goal_source by matching question/problem text.
+
+    goal_mode:
+      socratic — text before `**` (recommended; no answer scrubbing)
+      prose    — legacy sentence_goals scrub (known to produce fragments)
+    """
     goal_by_q = {}
     if goal_source:
         gs = goal_source if os.path.isabs(goal_source) else os.path.join(HERE, goal_source)
+        extractor = socratic_goals if goal_mode == "socratic" else sentence_goals
         for r in read_jsonl(gs):
             q = (r.get("problem") or r.get("question") or "").strip()
-            steps, g = parse_steps(r["answer"])
+            steps, _g = parse_steps(r["answer"])
             if not steps:
                 continue
-            goal_by_q[q] = sentence_goals(r["answer"], len(steps))
+            goal_by_q[q] = extractor(r["answer"], len(steps))
+        print(f"  goal_source={gs} mode={goal_mode} keyed={len(goal_by_q)}")
 
     rows = read_jsonl(data_path)
     out = []
+    matched = 0
+    all_goals = []
     for r in rows:
         o = row_to_oracle(r)
         if o is None or o["n_steps"] < min_steps:
@@ -208,6 +256,8 @@ def build(data_path, out_path, min_steps=1, limit=0, goal_source=None):
             for nd, g in zip(o["nodes"], goal_by_q[q]):
                 if g:
                     nd["goal"] = g
+            matched += 1
+        all_goals.extend(nd["goal"] for nd in o["nodes"])
         out.append(o)
         if limit and len(out) >= limit:
             break
@@ -216,11 +266,22 @@ def build(data_path, out_path, min_steps=1, limit=0, goal_source=None):
     n_nodes = sum(o["n_steps"] for o in out)
     n_with_dep = sum(1 for o in out for n in o["nodes"] if n["depends_on"])
     n_nl = sum(1 for o in out for n in o["nodes"]
-               if not n["goal"].startswith("Compute the intermediate quantity equal"))
+               if not n["goal"].startswith("Compute the intermediate quantity"))
+    print(f"  problems={len(out)} matched_goals={matched}/{len(out)}")
     print(f"  nodes={n_nodes}  edges={n_edges}  "
           f"nodes_with_deps={n_with_dep}/{n_nodes} "
           f"({n_with_dep / max(1, n_nodes):.1%})  "
           f"nl_goals={n_nl}/{n_nodes}")
+    qstat = _goal_quality(all_goals)
+    if qstat:
+        print(f"  goal_quality: mean_len={qstat['mean_len']:.0f}  "
+              f"endswith_?={qstat['pct_endswith_?']:.1%}  "
+              f"short={qstat['pct_short']:.1%}  "
+              f"internal_?={qstat['pct_internal_?']:.1%}")
+        if goal_mode == "socratic" and qstat["pct_endswith_?"] < 0.7:
+            print("  WARNING: socratic goals look weak; check --goal-source file")
+        if goal_mode == "socratic" and qstat["pct_short"] > 0.25:
+            print("  WARNING: many short goals; possible mismatch with gsm_deep")
     return out
 
 
@@ -231,9 +292,13 @@ if __name__ == "__main__":
     ap.add_argument("--min-steps", type=int, default=1)
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--goal-source", default="",
-                    help="raw gsm8k jsonl for NL goals (matched by question text)")
+                    help="gsm8k(-socratic) jsonl for NL goals (matched by question)")
+    ap.add_argument("--goal-mode", default="socratic",
+                    choices=["socratic", "prose"],
+                    help="socratic=text before **; prose=legacy scrub (buggy)")
     a = ap.parse_args()
     data = a.data if os.path.isabs(a.data) else os.path.join(HERE, a.data)
     out = a.out if os.path.isabs(a.out) else os.path.join(HERE, a.out)
     gs = a.goal_source or None
-    build(data, out, min_steps=a.min_steps, limit=a.limit, goal_source=gs)
+    build(data, out, min_steps=a.min_steps, limit=a.limit,
+          goal_source=gs, goal_mode=a.goal_mode)

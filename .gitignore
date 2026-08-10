@@ -18,8 +18,11 @@ logs/
 results/
 *.out
 data/gsm_oracle*.jsonl
+data/gsm8k_socratic*.jsonl
+data/musique*.jsonl
 e0_*/
 dd_*/
+mh_screen_*.json
 
 __pycache__/
 *.pyc

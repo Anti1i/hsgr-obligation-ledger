@@ -1,14 +1,19 @@
 """E0 analysis (CPU): oracle-hierarchy vs SC@k at matched measured tokens.
 
+Primary quantity (after socratic-goal fix):
+  decomposition tax = SC@1 − oracle-mode final accuracy
+  (how much accuracy is lost by forcing node-local execution even when
+   structure and predecessor values are perfect).
+
 Reports:
   - DAG stats (edges, depth)
   - per-node hit rate under oracle vs predicted predecessors
   - final-answer accuracy for both modes
   - SC@k curve with measured tokens
-  - stop-loss: does predicted-mode beat the SC point at matched token cost?
+  - matched-token comparison (diagnostic, not a hard gate)
 
 Usage:
-  python oracle_analyze.py --dir e0_deep --data data/gsm_oracle_deep.jsonl
+  python oracle_analyze.py --dir e0_soc --data data/gsm_oracle_soc.jsonl
 """
 from __future__ import annotations
 
@@ -161,12 +166,28 @@ def analyze(out_dir, data_path):
         sc_rows[k] = row
         print(f"  {k:>2} {row['sc']:>7.3f} {row['oracle']:>7.3f} {row['tokens']:>7.0f}")
 
-    # stop-loss: predicted final vs nearest SC by token
-    print("\n  -- stop-loss (predicted mode vs SC at matched tokens) --")
+    # Decomposition tax: even with perfect structure + gold predecessors,
+    # how far below single-shot CoT do we land?
+    print("\n  -- decomposition tax (oracle predecessors vs SC@1) --")
+    tax = None
+    if st["oracle"]["n"] and 1 in sc_rows:
+        acc_ora = st["oracle"]["final"] / st["oracle"]["n"]
+        sc1 = sc_rows[1]["sc"]
+        tax = sc1 - acc_ora
+        print(f"  oracle-mode final={acc_ora:.3f}  SC@1={sc1:.3f}  "
+              f"tax={tax:+.3f}  "
+              f"({'small — paradigm viable' if tax <= 0.05 else 'large — node-local execution costly'})")
+        if tax > 0.15:
+            print("  NOTE: large tax on GSM may still be OK if a harder multihop "
+                  "benchmark has SC@1≪0.9; tax is a cost, not a GSM go/no-go.")
+    else:
+        print("  (need oracle-mode rows and SC@1)")
+
+    print("\n  -- matched-token diagnostic (predicted vs SC) --")
+    gate = False
     if st["predicted"]["n"]:
         t_pred = st["predicted"]["tokens"] / st["predicted"]["n"]
         acc_pred = st["predicted"]["final"] / st["predicted"]["n"]
-        # find SC k with closest token cost
         best_k = min(sc_rows, key=lambda k: abs(sc_rows[k]["tokens"] - t_pred))
         sc_acc = sc_rows[best_k]["sc"]
         delta = acc_pred - sc_acc
@@ -174,12 +195,9 @@ def analyze(out_dir, data_path):
         print(f"  predicted final={acc_pred:.3f} @ {t_pred:.0f} tok  "
               f"vs SC@{best_k}={sc_acc:.3f} @ {sc_rows[best_k]['tokens']:.0f} tok  "
               f"delta={delta:+.3f}")
-        print(f"  GATE (predicted beats matched SC): "
-              f"{'PASS' if gate else 'FAIL'}  "
-              f"{'→ headroom for structure-as-control' if gate else '→ switch benchmark before building controller'}")
+        print(f"  (diagnostic only; primary quantity is decomposition tax above)")
     else:
-        gate = False
-        print("  GATE: FAIL (no predicted-mode rows)")
+        print("  (no predicted-mode rows)")
 
     rep = {
         "n_problems": n,
@@ -187,8 +205,9 @@ def analyze(out_dir, data_path):
                 "mean_depth": sum(depths) / n},
         "per_call_tokens": {"predicted": c_pred, "oracle": c_ora, "root": c_root},
         "modes": {},
-        "sc": sc_rows,
-        "gate_pass": gate,
+        "sc": {str(k): v for k, v in sc_rows.items()},
+        "decomposition_tax": tax,
+        "matched_token_pred_beats_sc": gate,
     }
     for mode in ("predicted", "oracle"):
         ns, nh = st[mode], node_hit[mode]
