@@ -1,0 +1,6 @@
+# Benchmark decision (2026-08-10)
+# GSM8K-deep: SC@1=0.90, decomposition tax=+11.3pp → no headroom
+# MuSiQue ans-dev (open-book gold supports, n=200, Qwen2.5-7B-Instruct):
+#   SC@1=0.440  SC@8=0.500  oracle@8=0.685  gap=+0.245  band PASS
+#   structure: mean depth 2.65, reconvergence 14.5%
+# DECISION: adopt MuSiQue as primary benchmark; next gate = mh_e0
