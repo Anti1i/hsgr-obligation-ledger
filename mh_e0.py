@@ -40,6 +40,8 @@ HOP_SYSTEM = (
     "evidence and any given predecessor answers. Put the hop answer in \\boxed{}."
 )
 
+TOK = Counter()
+
 HOP_USER = """Evidence for this hop:
 {evidence}
 
@@ -68,7 +70,17 @@ def resolve_goal(q, pred_vals):
     return REF_RE.sub(repl, q)
 
 
-def para_for_step(r, step):
+def para_for_step(r, step, evidence_mode="hop"):
+    """Evidence shown to one hop.
+
+    hop — only that hop's gold support paragraph. This hands the model the
+          paragraph->hop mapping, i.e. retrieval supervision on top of
+          structural supervision, so it inflates any structure-vs-SC gain.
+    all — every support paragraph, identical to what the SC baseline sees.
+          Isolates the contribution of structure alone.
+    """
+    if evidence_mode == "all":
+        return evidence_from_row(r)
     sp = step.get("support_paragraph")
     if isinstance(sp, dict) and sp.get("paragraph_text"):
         return f"[{sp.get('title','')}] {sp['paragraph_text']}".strip()
@@ -113,9 +125,9 @@ def load_rows(path, limit, seed=0):
     return usable
 
 
-def run_hops(R, rows, OUT, mode, bs=8):
+def run_hops(R, rows, OUT, mode, bs=8, evidence_mode="hop", suffix=""):
     tag = "s0"
-    path = os.path.join(OUT, f"hops_{mode}.{tag}.jsonl")
+    path = os.path.join(OUT, f"hops_{mode}{suffix}.{tag}.jsonl")
     have = {(r["id"], r["hop"]) for r in jread(path)}
     pred = defaultdict(dict)
     for r in jread(path):
@@ -159,11 +171,17 @@ def run_hops(R, rows, OUT, mode, bs=8):
                 else:
                     lines.append("[DEPENDS_ON] (none)")
                 users.append(HOP_USER.format(
-                    evidence=para_for_step(r, decomp[i]),
+                    evidence=para_for_step(r, decomp[i], evidence_mode),
                     question=r["question"],
                     structure="\n".join(lines),
                 ))
+            # Prompt tokens matter here: the evidence is re-sent once per hop,
+            # so prefill dominates and generated tokens alone understate cost.
+            for u in users:
+                TOK["hop_prompt"] += len(R.tok(u)["input_ids"])
+            t0_gen = R.n_new_tokens
             outs = R.chat_batch(users, system=HOP_SYSTEM, max_new=128, bs=bs)
+            TOK["hop_gen"] += R.n_new_tokens - t0_gen
             for (r, i, deps), o in zip(batch, outs):
                 text = o[0] if isinstance(o, (list, tuple)) else o
                 ans = extract_boxed(text)
@@ -171,14 +189,14 @@ def run_hops(R, rows, OUT, mode, bs=8):
                 norm = normalize(ans) if ans else None
                 hit = bool(ans and answers_match(ans, gold))
                 w.write({
-                    "id": r["_uid"], "hop": i, "mode": mode,
+                    "id": r["_uid"], "hop": i, "mode": mode + suffix,
                     "goal": r["question_decomposition"][i]["question"],
                     "ans": ans, "norm": norm, "gold": gold, "hit": hit,
                     "is_final": i == len(r["question_decomposition"]) - 1,
                 })
                 pred[r["_uid"]][i] = norm or ans
                 have.add((r["_uid"], i))
-            print(f"[hops_{mode}] +{len(batch)} (have {len(have)})", flush=True)
+            print(f"[hops_{mode}{suffix}] +{len(batch)} (have {len(have)})", flush=True)
         if mode == "oracle":
             break
 
@@ -209,8 +227,11 @@ def run_sc(R, rows, OUT, n_samples=8, reuse_dir=None):
         ev = evidence_from_row(r)
         prompts = [CEIL_USER.format(evidence=ev, question=r["question"])
                    for _ in range(n_samples)]
+        TOK["sc_prompt_per_sample"] += len(R.tok(prompts[0])["input_ids"])
+        t0_gen = R.n_new_tokens
         outs = R.chat_batch(prompts, system=CEIL_SYSTEM, max_new=256,
                             bs=min(4, n_samples), temperature=0.7)
+        TOK["sc_gen_all8"] += R.n_new_tokens - t0_gen
         cands = []
         for o in outs:
             text = o[0] if isinstance(o, (list, tuple)) else o
@@ -228,17 +249,18 @@ def run_sc(R, rows, OUT, n_samples=8, reuse_dir=None):
         print(f"[sc] {r['_uid']}", flush=True)
 
 
-def analyze(OUT, rows):
-    hops = {m: {} for m in ("predicted", "oracle")}
-    for mode in hops:
+def analyze(OUT, rows, suffix=""):
+    modes = (f"predicted{suffix}", f"oracle{suffix}")
+    hops = {m: {} for m in modes}
+    for mode in modes:
         for r in jread(os.path.join(OUT, f"hops_{mode}.s0.jsonl")):
             hops[mode].setdefault(r["id"], {})[r["hop"]] = r
     sc = {r["id"]: r for r in jread(os.path.join(OUT, "sc.s0.jsonl"))}
     ids = [r["_uid"] for r in rows if r["_uid"] in sc]
     n = len(ids)
-    print(f"== mh E0 ({n}) ==")
+    print(f"== mh E0{suffix or ' (evidence=hop)'} ({n}) ==")
     by = {}
-    for mode in ("predicted", "oracle"):
+    for mode in modes:
         final = hop_hit = hop_n = 0
         for uid in ids:
             row = next(r for r in rows if r["_uid"] == uid)
@@ -256,15 +278,29 @@ def analyze(OUT, rows):
     sc8 = sum(sc[i]["sc"] for i in ids) / max(1, n)
     ora = sum(sc[i]["oracle"] for i in ids) / max(1, n)
     print(f"  SC@1={hit1:.3f}  SC@8={sc8:.3f}  oracle@8={ora:.3f}")
-    tax = hit1 - by["oracle"]["final"]
+    pkey, okey = modes
+    tax = hit1 - by[okey]["final"]
     print(f"  decomposition tax (SC@1 - oracle-hops)={tax:+.3f}")
-    delta = by["predicted"]["final"] - hit1
+    delta = by[pkey]["final"] - hit1
+    d8 = by[pkey]["final"] - sc8
     print(f"  predicted vs SC@1 delta={delta:+.3f}")
-    gate = by["predicted"]["final"] > hit1
+    print(f"  predicted vs SC@8 delta={d8:+.3f}   "
+          f"(SC@8 is the budget-fairer baseline: hops re-send evidence per hop)")
+    if TOK:
+        pt, gt = TOK.get("hop_prompt", 0), TOK.get("hop_gen", 0)
+        print(f"  hop cost: prompt={pt} gen={gt} "
+              f"→ {(pt+gt)/max(1,n):.0f} tok/problem (both modes combined)")
+        s1p, s8g = TOK.get("sc_prompt_per_sample", 0), TOK.get("sc_gen_all8", 0)
+        if s1p:
+            print(f"  SC cost: prompt/sample={s1p/max(1,n):.0f} "
+                  f"gen(8 samples)={s8g/max(1,n):.0f} tok/problem")
+    gate = by[pkey]["final"] > hit1
     print(f"  HEADROOM gate (predicted > SC@1): {'PASS' if gate else 'FAIL'}")
     rep = {"n": n, "modes": by, "sc1": hit1, "sc8": sc8, "oracle8": ora,
-           "tax": tax, "gate_pass": gate}
-    with open(os.path.join(HERE, "mh_e0_report.json"), "w") as f:
+           "tax": tax, "delta_sc1": delta, "delta_sc8": d8,
+           "tokens": dict(TOK), "gate_pass": gate}
+    name = f"mh_e0_report{suffix or ''}.json"
+    with open(os.path.join(HERE, name), "w") as f:
         json.dump(rep, f, indent=1)
     return rep
 
@@ -277,20 +313,24 @@ def main():
     ap.add_argument("--limit", type=int, default=200)
     ap.add_argument("--reuse-sc", default="")
     ap.add_argument("--analyze-only", action="store_true")
+    ap.add_argument("--evidence-mode", default="hop", choices=["hop", "all"],
+                    help="hop=gold paragraph per hop (retrieval supervision); "
+                         "all=same evidence as SC baseline")
     a = ap.parse_args()
     data = a.data if os.path.isabs(a.data) else os.path.join(HERE, a.data)
     OUT = a.out_dir if os.path.isabs(a.out_dir) else os.path.join(HERE, a.out_dir)
     os.makedirs(OUT, exist_ok=True)
     rows = load_rows(data, a.limit)
-    print(f"[mh_e0] {len(rows)} problems", flush=True)
+    print(f"[mh_e0] {len(rows)} problems  evidence={a.evidence_mode}", flush=True)
+    suffix = "" if a.evidence_mode == "hop" else f"_ev{a.evidence_mode}"
     if a.analyze_only:
-        analyze(OUT, rows)
+        analyze(OUT, rows, suffix=suffix)
         return
     R = Runner(a.model)
-    run_hops(R, rows, OUT, "oracle")
-    run_hops(R, rows, OUT, "predicted")
+    run_hops(R, rows, OUT, "oracle", evidence_mode=a.evidence_mode, suffix=suffix)
+    run_hops(R, rows, OUT, "predicted", evidence_mode=a.evidence_mode, suffix=suffix)
     run_sc(R, rows, OUT, reuse_dir=a.reuse_sc or None)
-    analyze(OUT, rows)
+    analyze(OUT, rows, suffix=suffix)
 
 
 if __name__ == "__main__":
