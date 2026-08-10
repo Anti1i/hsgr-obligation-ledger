@@ -1,15 +1,42 @@
-# Benchmark decision (2026-08-10 evening)
+# Benchmark decision (2026-08-10 evening, REVISED after controls job 724624)
 # Model: Qwen2.5-7B-Instruct
 #
 # GSM8K-deep (socratic E0, n=300):
-#   SC@1=0.900  oracle-hops=0.787  tax=+0.113  → no headroom
+#   SC@1=0.900  oracle-hops=0.787  tax=+0.113  -> no headroom
 #
 # MuSiQue ans-dev open-book gold supports (n=200):
 #   structure: depth=2.65  reconvergence=14.5%
-#   SC@1=0.440  SC@8=0.500  oracle@8=0.685  band PASS
-#   E0 gold-decomp: predicted=0.535  oracle=0.640
-#   predicted - SC@1 = +0.095   tax(SC1-oracle)= -0.200
-#   HEADROOM GATE: PASS
+#   SC@1=0.448  SC@3=0.470 (budget-matched)  SC@8=0.500  oracle@8=0.685
 #
-# DECISION: MuSiQue is the primary benchmark.
-# NEXT: E1 structure prediction (no gold decomp); then decomp-level candidates + latent probe.
+# E0 gold-decomp, FIRST PASS (evidence = per-hop gold paragraph):
+#   predicted=0.535  oracle=0.640   predicted-SC@1=+0.095
+#   ^ RETRACTED as evidence for structure-as-control. Two confounds, both inflating:
+#     (1) each hop was handed its own gold support paragraph = paragraph-level
+#         retrieval supervision, while SC had to locate facts across all supports;
+#     (2) no token accounting. Hops re-send evidence per hop; measured cost is
+#         97% prefill, 2.61 prefills/problem, so the matched baseline is SC@3.
+#
+# CONTROLS (job 724624):
+#   evidence=all (matched evidence):  predicted=0.520  oracle=0.555
+#     oracle loses 8.5pp once the paragraph mapping is removed.
+#   vs SC@8:  predicted +0.020 p=0.66 ns ;  oracle +0.055 p=0.14 ns
+#   vs SC@3 (budget-matched):  predicted +0.050 (not significant at n=200)
+#   oracle vs oracle@8:  -0.130  p=0.0002  SIG  -> structure does NOT expand coverage
+#   by hop count (evidence=all, predicted - SC@1):
+#     2hop n=110 +10.0pp | 3hop n=58 +8.6pp | 4hop n=32 +0.0pp
+#     ^ gain DECAYS with depth, opposite of the structure-as-control prediction.
+#       The entire 4-hop advantage was the gold paragraph mapping.
+#
+# DECISION: MuSiQue stays the benchmark, but the structure-as-control hypothesis
+#   fails its own controls. Benchmark was never the problem: GSM8K rejects it via
+#   a +11pp decomposition tax, MuSiQue via a non-significant, depth-decaying gain.
+#
+# E1 (learn decomposition/dependency edges): CANCELLED. The quantity it would
+#   learn has no surviving gain, and a learned structure carries no gold paragraph
+#   mapping, so it cannot capture the one large real effect.
+# E2 (decomposition-level candidate domain): ON HOLD, same reason.
+#
+# NEXT (E2'): latent verifier reranking the existing 8 samples/problem.
+#   Real headroom here is oracle@8 - SC@8 = +18.5pp, needs no oracle structure
+#   and no gold paragraphs, and aligns with V3 (hidden-state probe AUROC 0.842).
+#   Gate: close >=1/3 of the gap (>= +6pp over SC@8) with McNemar p<0.05.
