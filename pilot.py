@@ -79,6 +79,9 @@ class Runner:
             model_id, torch_dtype=torch.bfloat16, attn_implementation="sdpa"
         ).cuda().eval()
         self.torch = torch
+        # Actual generated tokens, so budget-matched comparisons do not have to be
+        # estimated from the max_new_tokens ceiling.
+        self.n_new_tokens = 0
         print(f"[model] loaded {model_id} in {time.time()-t0:.0f}s", flush=True)
 
     def chat_batch(self, users, system=None, max_new=512, temperature=None, n=1, bs=16):
@@ -102,10 +105,11 @@ class Runner:
                 kwargs.update(do_sample=True, temperature=temperature, top_p=0.95)
             with self.torch.no_grad():
                 gen = self.model.generate(**enc, **kwargs)
+            plen = enc["input_ids"].shape[1]
             for j in range(len(chunk)):
-                outs.append(
-                    self.tok.decode(gen[j][enc["input_ids"].shape[1]:], skip_special_tokens=True)
-                )
+                new = gen[j][plen:]
+                self.n_new_tokens += int((new != self.tok.pad_token_id).sum().item())
+                outs.append(self.tok.decode(new, skip_special_tokens=True))
             del enc, gen
             self.torch.cuda.empty_cache()
         return [outs[k * n : (k + 1) * n] for k in range(len(users))]

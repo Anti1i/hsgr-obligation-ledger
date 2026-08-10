@@ -49,12 +49,16 @@ def jread_glob(out_dir, pattern):
     return rows
 
 
-def load_gold_steps(data_path):
+def load_gold_steps(data_path, require_steps=True):
     """{row_index: {"gold": str, "inter": [str], "problem": str}}
 
     `inter` holds the genuine intermediates: annotated step values with the final
     answer removed (the last step usually equals it, and counting it would credit
     the decomposition for reproducing the answer, not for decomposing).
+
+    With require_steps=False, rows carrying no intermediate annotations (e.g.
+    MATH) are kept with an empty `inter` so callers that only need gold answers
+    can share this loader.
     """
     p = data_path if os.path.isabs(data_path) else os.path.join(HERE, data_path)
     out = {}
@@ -68,6 +72,10 @@ def load_gold_steps(data_path):
             else:
                 steps, g = parse_steps(r["answer"])
                 if not steps or g is None:
+                    if require_steps:
+                        continue
+                    out[i] = {"gold": str(r["answer"]), "inter": [],
+                              "problem": problem or ""}
                     continue
                 gold = num_str(g)
                 vals = [num_str(v) for _, v in steps]
