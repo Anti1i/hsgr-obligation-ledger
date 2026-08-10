@@ -82,13 +82,27 @@ def para_for_step(r, step):
 def load_rows(path, limit, seed=0):
     rows = jread(path)
     usable = []
+    skip = {"short": 0, "no_ans": 0, "no_ev": 0}
     for r in rows:
         decomp = r.get("question_decomposition") or []
-        if len(decomp) < 2 or not r.get("answer"):
+        if len(decomp) < 2:
+            skip["short"] += 1
+            continue
+        if not r.get("answer"):
+            skip["no_ans"] += 1
             continue
         if not evidence_from_row(r):
+            skip["no_ev"] += 1
             continue
         usable.append(r)
+    print(f"[mh_e0] loaded {len(rows)} raw → {len(usable)} usable  "
+          f"(skip short={skip['short']} no_ans={skip['no_ans']} no_ev={skip['no_ev']})",
+          flush=True)
+    if not usable:
+        raise SystemExit(
+            "FATAL: 0 usable MuSiQue rows — jsonl likely missing support "
+            "paragraphs; re-run: python fetch_data.py --which musique --force"
+        )
     if limit and limit < len(usable):
         idxs = sorted(random.Random(seed).sample(range(len(usable)), limit))
         usable = [usable[i] for i in idxs]

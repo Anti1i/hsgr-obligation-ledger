@@ -9,10 +9,11 @@ MODEL=${MODEL:-Qwen/Qwen2.5-7B-Instruct}
 LIMIT=${LIMIT:-200}
 REUSE=${REUSE_SC:-}
 
-echo "=== ensure musique jsonl ==="
+echo "=== ensure musique with support paragraphs ==="
 unset HF_HUB_OFFLINE TRANSFORMERS_OFFLINE || true
 $PY -m pip install --quiet datasets pyarrow 2>/dev/null || true
-$PY fetch_data.py --which musique
+# force refresh if a stale no-paragraph copy was synced from $HOME/data
+$PY fetch_data.py --which musique --force
 
 echo "=== mh E0 limit=$LIMIT ==="
 export HF_HUB_OFFLINE=${HF_HUB_OFFLINE_KEEP:-1}

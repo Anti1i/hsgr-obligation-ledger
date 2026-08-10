@@ -72,8 +72,25 @@ def fetch_musique(force=False, limit=0):
     os.makedirs(DATA, exist_ok=True)
     dest = os.path.join(DATA, "musique_ans_val.jsonl")
     if os.path.exists(dest) and not force:
-        print(f"  skip {dest} (exists)")
-        return dest
+        # Stale copies without paragraph text make open-book E0 load 0 rows.
+        n = n_para = 0
+        with open(dest, encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                n += 1
+                r = json.loads(line)
+                if r.get("paragraphs"):
+                    n_para += 1
+                if n >= 20:
+                    break
+        if n and n_para / n >= 0.5:
+            print(f"  skip {dest} (exists, paragraphs ok)")
+            return dest
+        print(f"  refreshing {dest}: paragraphs sparse ({n_para}/{n} in sample)")
+        force = True
+    if os.path.exists(dest) and force:
+        os.remove(dest)
     try:
         from huggingface_hub import hf_hub_download
     except ImportError as e:
