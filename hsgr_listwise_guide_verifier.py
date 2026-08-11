@@ -443,6 +443,70 @@ def tune_policy_weight(metas, state, signal):
     return weight, curve
 
 
+def tune_policy_weight_by_hop(metas, state, signal, hop_by_pid):
+    """Choose Guide strength per depth using training OOF predictions only."""
+    weights = {}
+    curves = {}
+    for hop in sorted(set(hop_by_pid[meta["id"]] for meta in metas)):
+        indices = [
+            index
+            for index, meta in enumerate(metas)
+            if hop_by_pid[meta["id"]] == hop
+        ]
+        local_metas = [metas[index] for index in indices]
+        local_signal = [signal[index] for index in indices]
+        weights[hop], curves[str(hop)] = tune_policy_weight(
+            local_metas, state, local_signal
+        )
+    return weights, curves
+
+
+def select_policy_with_weights(
+    metas,
+    state,
+    signal,
+    weights,
+    hop_by_pid,
+    routed=True,
+    explicit=True,
+):
+    if not isinstance(weights, dict):
+        return select_policy(
+            metas,
+            state,
+            signal,
+            weights,
+            routed=routed,
+            explicit=explicit,
+        )
+    outcomes = {}
+    answers = {}
+    for hop, weight in sorted(weights.items()):
+        indices = [
+            index
+            for index, meta in enumerate(metas)
+            if hop_by_pid[meta["id"]] == hop
+        ]
+        local_metas = [metas[index] for index in indices]
+        local_signal = (
+            None if signal is None else [signal[index] for index in indices]
+        )
+        local_outcomes, local_answers = select_policy(
+            local_metas,
+            state,
+            local_signal,
+            weight,
+            routed=routed,
+            explicit=explicit,
+        )
+        outcomes.update(local_outcomes)
+        answers.update(local_answers)
+    expected = {meta["id"] for meta in metas}
+    if set(outcomes) != expected:
+        raise RuntimeError("hop-conditioned policy did not cover every problem")
+    return outcomes, answers
+
+
 def by_hop(outcomes, baselines, rows_by_id):
     grouped = defaultdict(list)
     for pid in baselines:
@@ -509,17 +573,31 @@ def main(args):
         args.seed + 10000,
         hop_balanced=args.hop_balanced,
     )
-    hidden_weight, hidden_curve = tune_policy_weight(
-        train_data["metas"], train_state, hidden_oof
-    )
-    nonhidden_weight, nonhidden_curve = tune_policy_weight(
-        train_data["metas"], train_state, nonhidden_oof
-    )
-    length_weight, length_curve = tune_policy_weight(
-        train_data["metas"],
-        train_state,
-        [len(meta["norm"] or "") for meta in train_data["metas"]],
-    )
+    if args.hop_policy:
+        hidden_weight, hidden_curve = tune_policy_weight_by_hop(
+            train_data["metas"], train_state, hidden_oof, hop_by_pid
+        )
+        nonhidden_weight, nonhidden_curve = tune_policy_weight_by_hop(
+            train_data["metas"], train_state, nonhidden_oof, hop_by_pid
+        )
+        length_weight, length_curve = tune_policy_weight_by_hop(
+            train_data["metas"],
+            train_state,
+            [len(meta["norm"] or "") for meta in train_data["metas"]],
+            hop_by_pid,
+        )
+    else:
+        hidden_weight, hidden_curve = tune_policy_weight(
+            train_data["metas"], train_state, hidden_oof
+        )
+        nonhidden_weight, nonhidden_curve = tune_policy_weight(
+            train_data["metas"], train_state, nonhidden_oof
+        )
+        length_weight, length_curve = tune_policy_weight(
+            train_data["metas"],
+            train_state,
+            [len(meta["norm"] or "") for meta in train_data["metas"]],
+        )
 
     train_sc, _ = select_policy(
         train_data["metas"], train_state, None, 0.0, routed=False, explicit=False
@@ -527,19 +605,21 @@ def main(args):
     train_explicit, _ = select_policy(
         train_data["metas"], train_state, None, 0.0, routed=True, explicit=True
     )
-    train_hidden, _ = select_policy(
+    train_hidden, _ = select_policy_with_weights(
         train_data["metas"],
         train_state,
         hidden_oof,
         hidden_weight,
+        hop_by_pid,
         routed=True,
         explicit=True,
     )
-    train_nonhidden, _ = select_policy(
+    train_nonhidden, _ = select_policy_with_weights(
         train_data["metas"],
         train_state,
         nonhidden_oof,
         nonhidden_weight,
+        hop_by_pid,
         routed=True,
         explicit=True,
     )
@@ -569,21 +649,20 @@ def main(args):
     outcomes = {}
     answers = {}
     for name, signal in signals.items():
-        outcomes[name], answers[name] = select_policy(
+        outcomes[name], answers[name] = select_policy_with_weights(
             held_data["metas"],
             held_state,
             signal,
             weights[name],
+            hop_by_pid,
             routed=True,
             explicit=True,
         )
 
     report = {
-        "experiment": (
-            "HSGR hop-balanced Guide-conditioned listwise hidden verifier"
-            if args.hop_balanced
-            else "HSGR Guide-conditioned listwise hidden verifier"
-        ),
+        "experiment": "HSGR Guide-conditioned listwise hidden verifier"
+        + (" with hop-balanced loss" if args.hop_balanced else "")
+        + (" and OOF depth-calibrated Guide policy" if args.hop_policy else ""),
         "claim_boundary": (
             "Outcome-supervised verifier trained on consumed n=200+n=320 "
             "problems and evaluated for development on an already observed "
@@ -610,6 +689,7 @@ def main(args):
                 else "class-balanced BCE + within-problem pairwise logistic"
             ),
             "hop_balanced": bool(args.hop_balanced),
+            "hop_policy": bool(args.hop_policy),
             "training_problem_hops": dict(
                 sorted(Counter(hop_by_pid[pid] for pid in train_ids).items())
             ),
@@ -764,4 +844,5 @@ if __name__ == "__main__":
     parser.add_argument("--threads", type=int, default=16)
     parser.add_argument("--seed", type=int, default=SEED)
     parser.add_argument("--hop-balanced", action="store_true")
+    parser.add_argument("--hop-policy", action="store_true")
     main(parser.parse_args())
