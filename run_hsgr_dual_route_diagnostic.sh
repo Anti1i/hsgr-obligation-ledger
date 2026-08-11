@@ -8,4 +8,5 @@ PY="$SCR/venv/bin/python"
   --data data/musique_ans_val.jsonl \
   --dev-features "$SCR/logs/structured_hidden_features_726228.pt" \
   --heldout-features "$SCR/logs/heldout_hidden_features_726310.pt" \
+  --combined-features "$SCR/logs/dual_route_hidden_features_726354.pt" \
   --out-dir hsgr_dual_route_diagnostic

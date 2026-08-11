@@ -34,7 +34,7 @@ cp -r "$REPO/." "$WORK/"
 cd "$WORK" || exit 1
 mkdir -p data
 cp -f "$SCR/data/musique_ans_val.jsonl" data/
-for FEATURE in structured_hidden_features_726228.pt heldout_hidden_features_726310.pt; do
+for FEATURE in structured_hidden_features_726228.pt heldout_hidden_features_726310.pt dual_route_hidden_features_726354.pt; do
   [ -f "$SCR/logs/$FEATURE" ] || { echo "FATAL: missing $SCR/logs/$FEATURE"; exit 1; }
 done
 

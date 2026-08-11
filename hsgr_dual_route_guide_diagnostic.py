@@ -285,10 +285,18 @@ def main(args):
         raise RuntimeError(f"expected 2560 held-out units, got {len(held_metas)}")
 
     combined_path = os.path.join(args.out_dir, "dual_route_hidden_features.pt")
-    if os.path.isfile(combined_path):
-        combined_payload = torch.load(combined_path, map_location="cpu")
+    reusable_combined = args.combined_features or combined_path
+    if os.path.isfile(reusable_combined):
+        combined_payload = torch.load(reusable_combined, map_location="cpu")
+        combined_metas = combined_payload["metas"]
+        if [
+            (meta["id"], meta["cand"]) for meta in combined_metas
+        ] != [
+            (meta["id"], meta["cand"]) for meta in held_metas
+        ]:
+            raise RuntimeError("combined feature metadata/order mismatch")
         correct_features = combined_payload["features"]["correct"]
-        print(f"[correct-route] reuse {combined_path}", flush=True)
+        print(f"[correct-route] reuse {reusable_combined}", flush=True)
     else:
         runner = Runner(args.model)
         correct_features = extract_correct_features(
@@ -332,11 +340,14 @@ def main(args):
             for meta in held_metas
         ],
     }
+    dev_labels["copy_correct_control"] = list(dev_labels["copy"])
+    held_labels["copy_correct_control"] = list(held_labels["copy"])
 
     reader_specs = {
         "support_correct": ("correct", SEED + 100),
         "support_wrong": ("wrong", SEED + 200),
         "copy": ("wrong", SEED + 300),
+        "copy_correct_control": ("correct", SEED + 400),
     }
     dev_scores = {}
     held_scores = {}
@@ -369,6 +380,17 @@ def main(args):
         "correct_only": dev_scores["support_correct"],
         "anti_wrong": [-score for score in dev_scores["support_wrong"]],
         "copy_hidden": [-score for score in dev_scores["copy"]],
+        "copy_correct_control": [
+            -score for score in dev_scores["copy_correct_control"]
+        ],
+        "transition_guard": [
+            correct - wrong - copy
+            for correct, wrong, copy in zip(
+                dev_scores["support_correct"],
+                dev_scores["support_wrong"],
+                dev_scores["copy"],
+            )
+        ],
         "length_only": [len(meta["norm"] or "") for meta in dev_metas],
     }
     held_signals = {
@@ -381,6 +403,17 @@ def main(args):
         "correct_only": held_scores["support_correct"],
         "anti_wrong": [-score for score in held_scores["support_wrong"]],
         "copy_hidden": [-score for score in held_scores["copy"]],
+        "copy_correct_control": [
+            -score for score in held_scores["copy_correct_control"]
+        ],
+        "transition_guard": [
+            correct - wrong - copy
+            for correct, wrong, copy in zip(
+                held_scores["support_correct"],
+                held_scores["support_wrong"],
+                held_scores["copy"],
+            )
+        ],
         "length_only": [len(meta["norm"] or "") for meta in held_metas],
     }
 
@@ -448,6 +481,8 @@ def main(args):
 
     route = report["policy"]["route_delta"]
     route_accuracy = route["accuracy"]
+    transition = report["policy"]["transition_guard"]
+    transition_accuracy = transition["accuracy"]
     report["gates"] = {
         "readers_transfer": (
             reader_report["support_correct"]["heldout_within_auroc"] >= 0.75
@@ -466,6 +501,22 @@ def main(args):
             >= report["policy"]["length_only"]["accuracy"] + 0.01
         ),
         "safe_vs_explicit": route["vs_explicit"]["paired"]["b_only"] <= 3,
+        "transition_guard_headroom": (
+            transition["delta"] >= 0.06
+            and transition["paired"]["p"] < 0.05
+        ),
+        "transition_guard_beyond_length": (
+            transition_accuracy
+            >= report["policy"]["length_only"]["accuracy"] + 0.01
+        ),
+        "transition_guard_safe": (
+            transition["vs_explicit"]["delta"] >= 0.0
+            and transition["vs_explicit"]["paired"]["b_only"] <= 3
+        ),
+        "predecessor_route_copy_specificity": (
+            report["policy"]["copy_hidden"]["accuracy"]
+            >= report["policy"]["copy_correct_control"]["accuracy"] + 0.01
+        ),
     }
     report["decision"] = (
         "DIAGNOSTIC PASS" if all(report["gates"].values()) else "DIAGNOSTIC FAIL"
@@ -512,6 +563,7 @@ if __name__ == "__main__":
     parser.add_argument("--data", required=True)
     parser.add_argument("--dev-features", required=True)
     parser.add_argument("--heldout-features", required=True)
+    parser.add_argument("--combined-features")
     parser.add_argument("--out-dir", default="hsgr_dual_route_diagnostic")
     parser.add_argument("--model", default="Qwen/Qwen2.5-7B-Instruct")
     parser.add_argument("--bs", type=int, default=8)
