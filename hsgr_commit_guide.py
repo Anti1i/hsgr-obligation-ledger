@@ -49,6 +49,8 @@ from hsgr_hidden_route_guide import HiddenRouteRunner
 
 FEATURE_LAYERS = (14, 21, 28)
 RIDGE_ALPHAS = (10.0, 100.0, 1000.0)
+PROJECTION_DIM = 64
+PROJECTION_SEED = 20263533
 
 
 def evaluate(units, texts):
@@ -161,34 +163,70 @@ class CommitGuideRunner(HiddenRouteRunner):
 
 
 def stratified_splits(labels, n_splits, seed):
-    from sklearn.model_selection import StratifiedKFold
-
     labels = np.asarray(labels)
-    counts = Counter(labels.tolist())
-    if min(counts.values()) < n_splits:
-        from sklearn.model_selection import KFold
-        splitter = KFold(n_splits=n_splits, shuffle=True, random_state=seed)
-        return list(splitter.split(np.zeros(len(labels))))
-    splitter = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
-    return list(splitter.split(np.zeros(len(labels)), labels))
+    rng = np.random.default_rng(seed)
+    folds = [[] for _ in range(n_splits)]
+    for label in sorted(set(labels.tolist())):
+        idxs = np.flatnonzero(labels == label)
+        rng.shuffle(idxs)
+        for i, idx in enumerate(idxs.tolist()):
+            folds[i % n_splits].append(idx)
+    all_idxs = np.arange(len(labels))
+    splits = []
+    for fold in folds:
+        val = np.asarray(sorted(fold), dtype=int)
+        keep = np.ones(len(labels), dtype=bool)
+        keep[val] = False
+        splits.append((all_idxs[keep], val))
+    return splits
+
+
+class NumpyRidge:
+    def __init__(self, alpha):
+        self.alpha = float(alpha)
+
+    def fit(self, X, y):
+        X = np.asarray(X, dtype=np.float64)
+        y = np.asarray(y, dtype=np.float64)
+        self.x_mean = X.mean(axis=0)
+        self.x_scale = X.std(axis=0)
+        self.x_scale[self.x_scale < 1e-8] = 1.0
+        xs = (X - self.x_mean) / self.x_scale
+        self.y_mean = float(y.mean())
+        yc = y - self.y_mean
+        gram = xs.T @ xs
+        gram.flat[:: gram.shape[0] + 1] += self.alpha
+        self.coef = np.linalg.solve(gram, xs.T @ yc)
+        return self
+
+    def predict(self, X):
+        X = np.asarray(X, dtype=np.float64)
+        xs = (X - self.x_mean) / self.x_scale
+        return xs @ self.coef + self.y_mean
 
 
 def make_model(alpha):
-    from sklearn.linear_model import Ridge
-    from sklearn.pipeline import make_pipeline
-    from sklearn.preprocessing import StandardScaler
+    return NumpyRidge(alpha)
 
-    return make_pipeline(
-        StandardScaler(),
-        Ridge(alpha=float(alpha), solver="lsqr", tol=1e-5),
-    )
+
+def prepare_projected_features(features):
+    projected = {}
+    for layer, hidden in features["hidden"].items():
+        rng = np.random.default_rng(PROJECTION_SEED + int(layer))
+        matrix = rng.choice(
+            np.asarray([-1.0, 1.0], dtype=np.float32),
+            size=(hidden.shape[1], PROJECTION_DIM),
+        ) / math.sqrt(PROJECTION_DIM)
+        projected[layer] = np.asarray(hidden, dtype=np.float32) @ matrix
+    features["projected"] = projected
+    return features
 
 
 def feature_matrix(features, layer):
     conf = features["confidence"]
     if layer is None:
         return conf
-    return np.concatenate([features["hidden"][int(layer)], conf], axis=1)
+    return np.concatenate([features["projected"][int(layer)], conf], axis=1)
 
 
 def threshold_candidates(scores):
@@ -387,6 +425,7 @@ def main(args):
     train_features = runner.answer_features(
         train_users, train_base_texts, FEATURE_LAYERS, args.bs_hidden
     )
+    prepare_projected_features(train_features)
     utility = (
         np.asarray(train_repair_em, dtype=int) - np.asarray(train_base_em, dtype=int)
     )
@@ -484,6 +523,7 @@ def main(args):
     test_features = runner.answer_features(
         test_users, test_base_texts, FEATURE_LAYERS, args.bs_hidden
     )
+    prepare_projected_features(test_features)
     hidden_X = feature_matrix(test_features, hidden_final["layer"])
     conf_X = feature_matrix(test_features, conf_final["layer"])
     hidden_test_scores = ensemble_predict(hidden_models, hidden_X)

@@ -42,9 +42,9 @@ for NAME in hsgr_edge_repair_cases_724849.jsonl hsgr_focus_route_cases_725772.js
 done
 
 "$PY" - <<'EOF' || exit 3
-import sklearn, torch
+import numpy, torch
 torch.backends.cuda.enable_cudnn_sdp(False)
-print("torch", torch.__version__, "sklearn", sklearn.__version__, "gpu", torch.cuda.get_device_name(0))
+print("torch", torch.__version__, "numpy", numpy.__version__, "gpu", torch.cuda.get_device_name(0))
 EOF
 
 export PY
