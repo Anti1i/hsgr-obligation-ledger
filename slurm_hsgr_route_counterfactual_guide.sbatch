@@ -4,7 +4,7 @@
 #SBATCH --gres=gpu:h100-47:1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=96G
-#SBATCH --time=04:00:00
+#SBATCH --time=03:00:00
 #SBATCH --output=/mnt/scratch/z/%u/dch-hsgr/logs/%x-%j.out
 
 set -uo pipefail

@@ -236,7 +236,14 @@ def chat_prompt_token_count(tokenizer, system, user):
     return len(tokenizer(text, add_special_tokens=False)["input_ids"])
 
 
-def plan_hierarchies(runner, rows, path, batch_size, counters):
+def save_counters(path, counters):
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(dict(counters), handle, ensure_ascii=False, indent=2)
+
+
+def plan_hierarchies(
+    runner, rows, path, batch_size, counters, accounting_path
+):
     completed = {item["id"]: item for item in jread(path)}
     writer = JWriter(path)
     ordered = [rows[pid] for pid in sorted(rows)]
@@ -264,6 +271,7 @@ def plan_hierarchies(runner, rows, path, batch_size, counters):
                 record = {"id": row["_uid"], **plan, "raw": raw[:2400]}
                 completed[row["_uid"]] = record
                 writer.write(record)
+            save_counters(accounting_path, counters)
         print(f"[planner] {min(start + batch_size, len(ordered))}/{len(ordered)}", flush=True)
     return {pid: completed[pid] for pid in sorted(rows)}
 
@@ -272,7 +280,9 @@ def node_key(pid, kind, index):
     return f"{pid}\t{kind}\t{index}"
 
 
-def execute_nodes(runner, rows, plans, path, batch_size, counters):
+def execute_nodes(
+    runner, rows, plans, path, batch_size, counters, accounting_path
+):
     existing = {}
     for item in jread(path):
         existing[node_key(item["id"], item["kind"], item["index"])] = item
@@ -323,6 +333,7 @@ def execute_nodes(runner, rows, plans, path, batch_size, counters):
                 }
                 existing[node_key(pid, kind, index)] = record
                 writer.write(record)
+            save_counters(accounting_path, counters)
         print(f"[executor] {min(start + batch_size, len(units))}/{len(units)}", flush=True)
     states = {}
     for pid in sorted(rows):
@@ -587,13 +598,35 @@ def main(args):
     if len(ids) != 840:
         raise RuntimeError(f"expected 840 consumed problems, got {len(ids)}")
     rows = rows_for_ids(args.data, ids)
+    prepare_accounting_path = os.path.join(
+        args.out_dir, "prepare_accounting.json"
+    )
     counters = Counter()
+    if os.path.isfile(prepare_accounting_path):
+        with open(prepare_accounting_path, encoding="utf-8") as handle:
+            counters.update(json.load(handle))
     runner = Runner(args.model)
 
     plans_path = os.path.join(args.out_dir, "predicted_hierarchies.jsonl")
     nodes_path = os.path.join(args.out_dir, "predicted_nodes.jsonl")
-    plans = plan_hierarchies(runner, rows, plans_path, args.bs_planner, counters)
-    states = execute_nodes(runner, rows, plans, nodes_path, args.bs_executor, counters)
+    plans = plan_hierarchies(
+        runner,
+        rows,
+        plans_path,
+        args.bs_planner,
+        counters,
+        prepare_accounting_path,
+    )
+    states = execute_nodes(
+        runner,
+        rows,
+        plans,
+        nodes_path,
+        args.bs_executor,
+        counters,
+        prepare_accounting_path,
+    )
+    save_counters(prepare_accounting_path, counters)
     donors = donor_map(states)
     if any(donors[pid] == pid for pid in donors) and len(ids) > 1:
         singleton_depths = Counter(states[pid]["predicted_depth"] for pid in states)
@@ -605,18 +638,42 @@ def main(args):
     route_features = {}
     route_lengths = {}
     for route in ROUTES:
-        route_features[route], route_lengths[route] = extract_route(
-            runner,
-            metas,
-            rows,
-            states,
-            donors,
-            route,
-            args.bs_hidden,
-            args.max_context,
-            matrices,
-            counters,
+        route_path = os.path.join(
+            args.out_dir, f"route_counterfactual_{route}_features.pt"
         )
+        if os.path.isfile(route_path):
+            cached = torch.load(route_path, map_location="cpu")
+            route_features[route] = cached["features"]
+            route_lengths[route] = cached["lengths"]
+            for key, value in cached["accounting"].items():
+                counters[key] = value
+            print(f"[hidden-{route}] reused {route_path}", flush=True)
+        else:
+            route_features[route], route_lengths[route] = extract_route(
+                runner,
+                metas,
+                rows,
+                states,
+                donors,
+                route,
+                args.bs_hidden,
+                args.max_context,
+                matrices,
+                counters,
+            )
+            prefix = f"{route}_"
+            route_accounting = {
+                key: value for key, value in counters.items() if key.startswith(prefix)
+            }
+            torch.save(
+                {
+                    "features": route_features[route],
+                    "lengths": route_lengths[route],
+                    "accounting": route_accounting,
+                },
+                route_path,
+            )
+            print(f"[hidden-{route}] checkpointed {route_path}", flush=True)
     unequal = sum(
         int(left != right)
         for left, right in zip(route_lengths["matched"], route_lengths["counterfactual"])
