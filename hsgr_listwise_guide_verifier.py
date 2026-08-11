@@ -42,6 +42,8 @@ HEAD_WIDTH = 32
 LEARNING_RATE = 0.003
 WEIGHT_DECAY = 0.001
 RANK_WEIGHT = 1.0
+DEPTH_REG_WEIGHT = 0.01
+DEPTH_MODULATION = 0.25
 
 
 def load_feature_payload(torch, path):
@@ -109,6 +111,12 @@ def within_z(values, metas):
 
 def make_data(torch, payload, state, hop_by_pid):
     metas = payload["metas"]
+    pids = sorted({meta["id"] for meta in metas})
+    sources = list(pids)
+    random.Random(SEED + 73).shuffle(sources)
+    permuted_hop = {
+        pid: hop_by_pid[source] for pid, source in zip(pids, sources)
+    }
     counts = Counter((meta["id"], meta["norm"]) for meta in metas if meta["norm"])
     lengths = [len(meta["norm"] or "") for meta in metas]
     length_z = within_z(lengths, metas)
@@ -132,6 +140,9 @@ def make_data(torch, payload, state, hop_by_pid):
         "hops": torch.tensor(
             [hop_by_pid[meta["id"]] for meta in metas], dtype=torch.long
         ),
+        "permuted_hops": torch.tensor(
+            [permuted_hop[meta["id"]] for meta in metas], dtype=torch.long
+        ),
         "scalar": torch.tensor(scalar, dtype=torch.float32),
         "labels": torch.tensor(labels, dtype=torch.float32),
         "features": {
@@ -145,13 +156,14 @@ def make_data(torch, payload, state, hop_by_pid):
     }
 
 
-def make_model(torch, hidden):
+def make_model(torch, hidden, depth_conditioned=False):
     nn = torch.nn
 
     class CandidateVerifier(nn.Module):
         def __init__(self):
             super().__init__()
             self.hidden = bool(hidden)
+            self.depth_conditioned = bool(depth_conditioned)
             if self.hidden:
                 self.encoders = nn.ModuleDict(
                     {
@@ -166,6 +178,11 @@ def make_model(torch, hidden):
                 input_dim = len(LAYERS) * ENCODER_WIDTH + 5
             else:
                 input_dim = 5
+            if self.depth_conditioned:
+                self.depth_scale = nn.Embedding(3, input_dim)
+                self.depth_bias = nn.Embedding(3, input_dim)
+                nn.init.zeros_(self.depth_scale.weight)
+                nn.init.zeros_(self.depth_bias.weight)
             self.head = nn.Sequential(
                 nn.Linear(input_dim, HEAD_WIDTH),
                 nn.GELU(),
@@ -174,22 +191,45 @@ def make_model(torch, hidden):
             )
 
         def forward(self, data, route_mode="normal"):
+            if route_mode not in ("normal", "swap", "mismatch", "depth_permute"):
+                raise ValueError(route_mode)
+            if route_mode == "depth_permute" and not self.depth_conditioned:
+                raise ValueError("depth_permute requires a depth-conditioned model")
+            feature_mode = "normal" if route_mode == "depth_permute" else route_mode
             parts = [data["scalar"]]
             if self.hidden:
                 for layer in LAYERS:
                     correct = data["features"]["correct"][layer]
                     wrong = data["features"]["wrong"][layer]
-                    if route_mode == "swap":
+                    if feature_mode == "swap":
                         correct, wrong = wrong, correct
-                    elif route_mode == "mismatch":
+                    elif feature_mode == "mismatch":
                         wrong = wrong[data["rotation"]]
-                    elif route_mode != "normal":
-                        raise ValueError(route_mode)
                     pair = torch.cat(
                         [correct - wrong, correct * wrong], dim=1
                     )
                     parts.append(self.encoders[str(layer)](pair))
-            return self.head(torch.cat(parts, dim=1)).squeeze(1)
+            joined = torch.cat(parts, dim=1)
+            if self.depth_conditioned:
+                hops = (
+                    data["permuted_hops"]
+                    if route_mode == "depth_permute"
+                    else data["hops"]
+                )
+                depth_index = (hops - 2).clamp(min=0, max=2)
+                scale = DEPTH_MODULATION * torch.tanh(
+                    self.depth_scale(depth_index)
+                )
+                bias = DEPTH_MODULATION * torch.tanh(
+                    self.depth_bias(depth_index)
+                )
+                joined = joined * (1.0 + scale) + bias
+            return self.head(joined).squeeze(1)
+
+        def depth_regularization(self):
+            if not self.depth_conditioned:
+                return None
+            return self.depth_scale.weight.square().mean() + self.depth_bias.weight.square().mean()
 
     return CandidateVerifier()
 
@@ -253,10 +293,17 @@ def hop_class_balanced_bce(torch, logits, labels, hops):
 
 
 def fit_model(
-    torch, data, train_idx, val_idx, hidden, seed, hop_balanced=False
+    torch,
+    data,
+    train_idx,
+    val_idx,
+    hidden,
+    seed,
+    hop_balanced=False,
+    depth_conditioned=False,
 ):
     torch.manual_seed(seed)
-    model = make_model(torch, hidden)
+    model = make_model(torch, hidden, depth_conditioned=depth_conditioned)
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY
     )
@@ -295,6 +342,9 @@ def fit_model(
             else rank_losses.mean()
         )
         loss = bce + RANK_WEIGHT * rank_loss
+        depth_reg = model.depth_regularization()
+        if depth_reg is not None:
+            loss = loss + DEPTH_REG_WEIGHT * depth_reg
         loss.backward()
         optimizer.step()
         if epoch == 1 or epoch % 5 == 0 or epoch == EPOCHS:
@@ -348,7 +398,13 @@ def fit_model(
 
 
 def cv_scores(
-    torch, train_data, held_data, hidden, seed, hop_balanced=False
+    torch,
+    train_data,
+    held_data,
+    hidden,
+    seed,
+    hop_balanced=False,
+    depth_conditioned=False,
 ):
     pids = sorted(set(train_data["pids"]))
     random.Random(seed).shuffle(pids)
@@ -374,6 +430,7 @@ def cv_scores(
             hidden,
             seed + 1000 * fold_index,
             hop_balanced=hop_balanced,
+            depth_conditioned=depth_conditioned,
         )
         with torch.no_grad():
             train_scores = model(train_data).tolist()
@@ -384,6 +441,8 @@ def cv_scores(
         for index, score in zip(test_idx, local):
             oof[index] = score
         modes = ("normal", "swap", "mismatch") if hidden else ("normal",)
+        if hidden and depth_conditioned:
+            modes = modes + ("depth_permute",)
         for mode in modes:
             with torch.no_grad():
                 scores = model(held_data, route_mode=mode).tolist()
@@ -564,6 +623,7 @@ def main(args):
         True,
         args.seed,
         hop_balanced=args.hop_balanced,
+        depth_conditioned=args.depth_conditioned,
     )
     nonhidden_oof, nonhidden_held, nonhidden_folds = cv_scores(
         torch,
@@ -572,6 +632,7 @@ def main(args):
         False,
         args.seed + 10000,
         hop_balanced=args.hop_balanced,
+        depth_conditioned=args.depth_conditioned,
     )
     if args.hop_policy:
         hidden_weight, hidden_curve = tune_policy_weight_by_hop(
@@ -639,6 +700,8 @@ def main(args):
             len(meta["norm"] or "") for meta in held_data["metas"]
         ],
     }
+    if args.depth_conditioned:
+        signals["depth_permutation_control"] = hidden_held["depth_permute"]
     weights = {
         "hidden_listwise": hidden_weight,
         "nonhidden_control": nonhidden_weight,
@@ -646,6 +709,8 @@ def main(args):
         "route_mismatch_control": hidden_weight,
         "length_control": length_weight,
     }
+    if args.depth_conditioned:
+        weights["depth_permutation_control"] = hidden_weight
     outcomes = {}
     answers = {}
     for name, signal in signals.items():
@@ -662,7 +727,12 @@ def main(args):
     report = {
         "experiment": "HSGR Guide-conditioned listwise hidden verifier"
         + (" with hop-balanced loss" if args.hop_balanced else "")
-        + (" and OOF depth-calibrated Guide policy" if args.hop_policy else ""),
+        + (" and OOF depth-calibrated Guide policy" if args.hop_policy else "")
+        + (
+            " and shrinkage-regularized depth modulation"
+            if args.depth_conditioned
+            else ""
+        ),
         "claim_boundary": (
             "Outcome-supervised verifier trained on consumed n=200+n=320 "
             "problems and evaluated for development on an already observed "
@@ -690,6 +760,15 @@ def main(args):
             ),
             "hop_balanced": bool(args.hop_balanced),
             "hop_policy": bool(args.hop_policy),
+            "depth_conditioned": bool(args.depth_conditioned),
+            "depth_modulation": DEPTH_MODULATION,
+            "depth_regularization": DEPTH_REG_WEIGHT,
+            "depth_permutation_changed_fraction": float(
+                (held_data["hops"] != held_data["permuted_hops"])
+                .float()
+                .mean()
+                .item()
+            ),
             "training_problem_hops": dict(
                 sorted(Counter(hop_by_pid[pid] for pid in train_ids).items())
             ),
@@ -845,4 +924,5 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=SEED)
     parser.add_argument("--hop-balanced", action="store_true")
     parser.add_argument("--hop-policy", action="store_true")
+    parser.add_argument("--depth-conditioned", action="store_true")
     main(parser.parse_args())
