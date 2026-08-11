@@ -322,8 +322,6 @@ def nondependency_state(rows):
 
 
 def main(args):
-    import torch
-
     heldout_rows, selection = select_reserved_rows(args)
     heldout_ids = [row["_uid"] for row in heldout_rows]
     print(
@@ -355,6 +353,8 @@ def main(args):
             )
         )
         return
+
+    import torch
 
     os.makedirs(args.out_dir, exist_ok=True)
     torch.manual_seed(args.seed)
