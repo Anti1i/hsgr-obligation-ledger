@@ -381,7 +381,7 @@ def build_repair_prompt(unit: dict, candidate: str, arm: str) -> str:
 
 
 def dry_run(units: list[dict], meta: dict) -> None:
-    assert parsed_answer(r"\\boxed{\\text{The Hateful Eight}}") == "The Hateful Eight"
+    assert parsed_answer(r"\boxed{\text{The Hateful Eight}}") == "The Hateful Eight"
     assert normalize_answer("The Charles University,") == "charles university"
     assert abs(answer_f1("Charles University in Prague", ["Charles University"]) - 2 / 3) < 1e-12
     print(json.dumps(meta, indent=1, ensure_ascii=False))
