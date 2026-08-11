@@ -107,7 +107,7 @@ def within_z(values, metas):
     return result
 
 
-def make_data(torch, payload, state):
+def make_data(torch, payload, state, hop_by_pid):
     metas = payload["metas"]
     counts = Counter((meta["id"], meta["norm"]) for meta in metas if meta["norm"])
     lengths = [len(meta["norm"] or "") for meta in metas]
@@ -129,6 +129,9 @@ def make_data(torch, payload, state):
     return {
         "metas": metas,
         "pids": [meta["id"] for meta in metas],
+        "hops": torch.tensor(
+            [hop_by_pid[meta["id"]] for meta in metas], dtype=torch.long
+        ),
         "scalar": torch.tensor(scalar, dtype=torch.float32),
         "labels": torch.tensor(labels, dtype=torch.float32),
         "features": {
@@ -210,17 +213,48 @@ def rank_pairs(data, indices):
     return positive, negative
 
 
-def pair_accuracy(scores, data, indices):
+def pair_accuracy(scores, data, indices, hop_balanced=False):
     positive, negative = rank_pairs(data, indices)
     if not positive:
         return 0.5
-    return sum(
-        float(scores[pos]) > float(scores[neg])
+    correct = [
+        float(float(scores[pos]) > float(scores[neg]))
         for pos, neg in zip(positive, negative)
-    ) / len(positive)
+    ]
+    if not hop_balanced:
+        return sum(correct) / len(correct)
+    grouped = defaultdict(list)
+    for value, pos in zip(correct, positive):
+        grouped[int(data["hops"][pos].item())].append(value)
+    return sum(sum(values) / len(values) for values in grouped.values()) / len(
+        grouped
+    )
 
 
-def fit_model(torch, data, train_idx, val_idx, hidden, seed):
+def mean_loss_by_hop(torch, losses, hops):
+    """Give every observed hop stratum equal mass in an already scalar loss."""
+    return torch.stack(
+        [losses[hops == hop].mean() for hop in torch.unique(hops)]
+    ).mean()
+
+
+def hop_class_balanced_bce(torch, logits, labels, hops):
+    """Give every (hop, correctness) stratum equal mass when it is present."""
+    losses = torch.nn.functional.binary_cross_entropy_with_logits(
+        logits, labels, reduction="none"
+    )
+    strata = []
+    for hop in torch.unique(hops):
+        for label in (0.0, 1.0):
+            mask = (hops == hop) & (labels == label)
+            if bool(mask.any()):
+                strata.append(losses[mask].mean())
+    return torch.stack(strata).mean()
+
+
+def fit_model(
+    torch, data, train_idx, val_idx, hidden, seed, hop_balanced=False
+):
     torch.manual_seed(seed)
     model = make_model(torch, hidden)
     optimizer = torch.optim.AdamW(
@@ -231,6 +265,7 @@ def fit_model(torch, data, train_idx, val_idx, hidden, seed):
     pos_tensor = torch.tensor(train_pos, dtype=torch.long)
     neg_tensor = torch.tensor(train_neg, dtype=torch.long)
     y_train = data["labels"][train_tensor]
+    train_hops = data["hops"][train_tensor]
     positives = float(y_train.sum().item())
     negatives = float(len(y_train) - positives)
     pos_weight = torch.tensor(
@@ -243,12 +278,22 @@ def fit_model(torch, data, train_idx, val_idx, hidden, seed):
         model.train()
         optimizer.zero_grad(set_to_none=True)
         logits = model(data)
-        bce = torch.nn.functional.binary_cross_entropy_with_logits(
-            logits[train_tensor], y_train, pos_weight=pos_weight
-        )
-        rank_loss = torch.nn.functional.softplus(
+        if hop_balanced:
+            bce = hop_class_balanced_bce(
+                torch, logits[train_tensor], y_train, train_hops
+            )
+        else:
+            bce = torch.nn.functional.binary_cross_entropy_with_logits(
+                logits[train_tensor], y_train, pos_weight=pos_weight
+            )
+        rank_losses = torch.nn.functional.softplus(
             -(logits[pos_tensor] - logits[neg_tensor])
-        ).mean()
+        )
+        rank_loss = (
+            mean_loss_by_hop(torch, rank_losses, data["hops"][pos_tensor])
+            if hop_balanced
+            else rank_losses.mean()
+        )
         loss = bce + RANK_WEIGHT * rank_loss
         loss.backward()
         optimizer.step()
@@ -256,17 +301,24 @@ def fit_model(torch, data, train_idx, val_idx, hidden, seed):
             model.eval()
             with torch.no_grad():
                 values = model(data).tolist()
-            val_pair = pair_accuracy(values, data, val_idx)
+            val_pair = pair_accuracy(
+                values, data, val_idx, hop_balanced=hop_balanced
+            )
             val_pos, val_neg = rank_pairs(data, val_idx)
             if val_pos:
                 vp = torch.tensor(val_pos, dtype=torch.long)
                 vn = torch.tensor(val_neg, dtype=torch.long)
                 with torch.no_grad():
-                    val_rank = float(
-                        torch.nn.functional.softplus(
-                            -(model(data)[vp] - model(data)[vn])
-                        ).mean().item()
+                    val_rank_losses = torch.nn.functional.softplus(
+                        -(model(data)[vp] - model(data)[vn])
                     )
+                    if hop_balanced:
+                        val_rank_losses = mean_loss_by_hop(
+                            torch, val_rank_losses, data["hops"][vp]
+                        )
+                    else:
+                        val_rank_losses = val_rank_losses.mean()
+                    val_rank = float(val_rank_losses.item())
             else:
                 val_rank = float("inf")
             row = {
@@ -295,7 +347,9 @@ def fit_model(torch, data, train_idx, val_idx, hidden, seed):
     return model, {"selected": selected, "history": history}
 
 
-def cv_scores(torch, train_data, held_data, hidden, seed):
+def cv_scores(
+    torch, train_data, held_data, hidden, seed, hop_balanced=False
+):
     pids = sorted(set(train_data["pids"]))
     random.Random(seed).shuffle(pids)
     folds = [pids[index::FOLDS] for index in range(FOLDS)]
@@ -319,6 +373,7 @@ def cv_scores(torch, train_data, held_data, hidden, seed):
             val_idx,
             hidden,
             seed + 1000 * fold_index,
+            hop_balanced=hop_balanced,
         )
         with torch.no_grad():
             train_scores = model(train_data).tolist()
@@ -431,14 +486,28 @@ def main(args):
     held_rows = [rows_by_id[pid] for pid in held_ids]
     train_state = dependency_state(train_rows)
     held_state = dependency_state(held_rows)
-    train_data = make_data(torch, train_payload, train_state)
-    held_data = make_data(torch, held_payload, held_state)
+    hop_by_pid = {
+        pid: len(rows_by_id[pid]["question_decomposition"])
+        for pid in train_ids | held_ids
+    }
+    train_data = make_data(torch, train_payload, train_state, hop_by_pid)
+    held_data = make_data(torch, held_payload, held_state, hop_by_pid)
 
     hidden_oof, hidden_held, hidden_folds = cv_scores(
-        torch, train_data, held_data, True, args.seed
+        torch,
+        train_data,
+        held_data,
+        True,
+        args.seed,
+        hop_balanced=args.hop_balanced,
     )
     nonhidden_oof, nonhidden_held, nonhidden_folds = cv_scores(
-        torch, train_data, held_data, False, args.seed + 10000
+        torch,
+        train_data,
+        held_data,
+        False,
+        args.seed + 10000,
+        hop_balanced=args.hop_balanced,
     )
     hidden_weight, hidden_curve = tune_policy_weight(
         train_data["metas"], train_state, hidden_oof
@@ -510,7 +579,11 @@ def main(args):
         )
 
     report = {
-        "experiment": "HSGR Guide-conditioned listwise hidden verifier",
+        "experiment": (
+            "HSGR hop-balanced Guide-conditioned listwise hidden verifier"
+            if args.hop_balanced
+            else "HSGR Guide-conditioned listwise hidden verifier"
+        ),
         "claim_boundary": (
             "Outcome-supervised verifier trained on consumed n=200+n=320 "
             "problems and evaluated for development on an already observed "
@@ -530,7 +603,16 @@ def main(args):
             "encoder_width": ENCODER_WIDTH,
             "head_width": HEAD_WIDTH,
             "epochs": EPOCHS,
-            "loss": "class-balanced BCE + within-problem pairwise logistic",
+            "loss": (
+                "equal (hop, class) BCE strata + equal-hop within-problem "
+                "pairwise logistic"
+                if args.hop_balanced
+                else "class-balanced BCE + within-problem pairwise logistic"
+            ),
+            "hop_balanced": bool(args.hop_balanced),
+            "training_problem_hops": dict(
+                sorted(Counter(hop_by_pid[pid] for pid in train_ids).items())
+            ),
         },
         "training_oof": {
             "hidden_reader": candidate_diagnostics(hidden_oof, train_data),
@@ -681,5 +763,5 @@ if __name__ == "__main__":
     parser.add_argument("--out-dir", default="hsgr_listwise_guide_verifier")
     parser.add_argument("--threads", type=int, default=16)
     parser.add_argument("--seed", type=int, default=SEED)
+    parser.add_argument("--hop-balanced", action="store_true")
     main(parser.parse_args())
-
