@@ -33,6 +33,36 @@ cd "$WORK" || exit 1
 mkdir -p data
 cp -f "$SCR/data/musique_ans_val.jsonl" data/
 
+"$PY" - <<'PY'
+import torch
+from hsgr_listwise_guide_verifier import (
+    hop_class_balanced_bce,
+    mean_loss_by_hop,
+    pair_accuracy,
+)
+
+losses = torch.tensor([1.0, 3.0, 5.0])
+hops = torch.tensor([2, 2, 4])
+assert abs(float(mean_loss_by_hop(torch, losses, hops)) - 3.5) < 1e-6
+logits = torch.tensor([0.0, 0.0, 0.0, 0.0])
+labels = torch.tensor([0.0, 1.0, 0.0, 1.0])
+balanced = hop_class_balanced_bce(
+    torch, logits, labels, torch.tensor([2, 2, 4, 4])
+)
+assert abs(float(balanced) - 0.69314718) < 1e-6
+data = {
+    "labels": labels,
+    "pids": ["a", "a", "b", "b"],
+    "hops": torch.tensor([2, 2, 4, 4]),
+}
+assert pair_accuracy([2.0, 1.0, 0.0, 1.0], data, range(4), True) == 0.5
+print("SELFTEST_OK", flush=True)
+PY
+if [ "$?" -ne 0 ]; then
+  echo "FATAL: compute-node self-test failed"
+  exit 1
+fi
+
 bash run_hsgr_hop_balanced_guide_verifier.sh \
   2>&1 | tee "$SCR/logs/hsgr_hop_balanced_guide_${SLURM_JOB_ID}.txt"
 RC=${PIPESTATUS[0]}
