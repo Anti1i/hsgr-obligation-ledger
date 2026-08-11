@@ -1,6 +1,7 @@
 import unittest
 
 from hsgr_route_counterfactual_eval import holm_adjust, make_model
+from hsgr_route_augmented_eval import make_model as make_augmented_model
 from hsgr_structured_hidden_verifier import LAYERS
 from hsgr_route_counterfactual_features import (
     FALLBACK_FOIL,
@@ -87,6 +88,12 @@ class RouteCounterfactualTest(unittest.TestCase):
             self.assertEqual(tuple(model(data).shape), (n,))
             if kind == "guide":
                 for mode in ("swap", "mismatch", "state_permute"):
+                    self.assertEqual(tuple(model(data, mode=mode).shape), (n,))
+        for kind in ("route_augmented", "ordinary_wide", "activation_wide"):
+            model = make_augmented_model(torch, kind)
+            self.assertEqual(tuple(model(data).shape), (n,))
+            if kind == "route_augmented":
+                for mode in ("swap", "mismatch"):
                     self.assertEqual(tuple(model(data, mode=mode).shape), (n,))
 
 
