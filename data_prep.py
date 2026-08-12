@@ -22,6 +22,7 @@ Usage:
   python data_prep.py --which all --data-dir data
 """
 import argparse
+import itertools
 import json
 import os
 import random
@@ -218,10 +219,145 @@ def build_gsm_chain(data_dir, split="test", limit=400, seed=0, max_ratio=3.0):
     return out
 
 
+def build_gsm_join(data_dir, split="test", limit=400, seed=17, max_ratio=3.0):
+    """Compose a three-node join: two independent parents feed one root.
+
+    Two distinct numeric literals in problem B are replaced by the answers to
+    independent problems A and C.  Each replacement must change B's symbolic
+    result on its own, so both incoming edges have a verified causal effect.
+    The A/C order and their assignment to B's two literals are randomized.
+
+    This set is for dependency-source diagnostics: a wrong root can originate
+    on parent edge 1, parent edge 2, both edges, or the local root computation.
+    """
+    rows = read_jsonl(os.path.join(data_dir, f"gsm8k_{split}.jsonl"))
+    parsed = []
+    for r in rows:
+        steps, gold = parse_steps(r["answer"])
+        if steps and gold is not None and re_evaluate(steps, {}) == gold:
+            parsed.append({"q": r["question"], "steps": steps, "gold": gold})
+
+    parent_ids = [
+        i for i, row in enumerate(parsed)
+        if row["gold"] > 1
+        and row["gold"].denominator == 1
+        and not UNITLESS_RE.search(row["q"])
+    ]
+    rng = random.Random(seed)
+    root_order = list(range(len(parsed)))
+    rng.shuffle(root_order)
+    out = []
+
+    for bi in root_order:
+        B = parsed[bi]
+        literals = []
+        for text, value in substitutable_numbers(B):
+            if all(text != old for old, _ in literals):
+                literals.append((text, value))
+        pairs = [
+            pair for pair in itertools.combinations(literals, 2)
+            # Avoid ambiguous textual replacement such as 10 inside 100.
+            if pair[0][0] not in pair[1][0] and pair[1][0] not in pair[0][0]
+        ]
+        rng.shuffle(pairs)
+        if not pairs:
+            continue
+
+        built = None
+        for target_pair in pairs:
+            for _ in range(80):
+                ai, ci = rng.sample(parent_ids, 2)
+                if bi in (ai, ci):
+                    continue
+                A, C = parsed[ai], parsed[ci]
+                parents = [A, C]
+                rng.shuffle(parents)  # break source label vs textual position
+                replacements = [parents[0]["gold"], parents[1]["gold"]]
+                ratios = [
+                    float(new) / float(old)
+                    for new, (_, old) in zip(replacements, target_pair)
+                ]
+                if any(not (1.0 / max_ratio <= ratio <= max_ratio) for ratio in ratios):
+                    continue
+                mapping = {
+                    target_pair[0][0]: replacements[0],
+                    target_pair[1][0]: replacements[1],
+                }
+                new_gold = re_evaluate(B["steps"], mapping)
+                first_only = re_evaluate(
+                    B["steps"], {target_pair[0][0]: replacements[0]}
+                )
+                second_only = re_evaluate(
+                    B["steps"], {target_pair[1][0]: replacements[1]}
+                )
+                if (
+                    new_gold is None
+                    or new_gold <= 0
+                    or new_gold.denominator != 1
+                    or new_gold == B["gold"]
+                    or first_only in (None, B["gold"])
+                    or second_only in (None, B["gold"])
+                ):
+                    continue
+
+                q3 = B["q"].strip()
+                q3 = q3.replace(
+                    target_pair[0][0], "(the answer to Question 1)", 1
+                )
+                q3 = q3.replace(
+                    target_pair[1][0], "(the answer to Question 2)", 1
+                )
+                if target_pair[0][0] in q3 or target_pair[1][0] in q3:
+                    continue
+                built = {
+                    "problem": (
+                        "Question 1: " + parents[0]["q"].strip() + "\n\n"
+                        "Question 2: " + parents[1]["q"].strip() + "\n\n"
+                        "Question 3: " + q3 + "\n\n"
+                        "Give the answer to Question 3."
+                    ),
+                    "answer": num_str(new_gold),
+                    "parent_answers": [
+                        num_str(parents[0]["gold"]), num_str(parents[1]["gold"])
+                    ],
+                    "substituted": [target_pair[0][0], target_pair[1][0]],
+                    "single_edge_answers": [
+                        num_str(first_only), num_str(second_only)
+                    ],
+                    "original_root_answer": num_str(B["gold"]),
+                    "parent_step_counts": [
+                        len(parents[0]["steps"]), len(parents[1]["steps"])
+                    ],
+                    "root_step_count": len(B["steps"]),
+                    "graph": {
+                        "nodes": ["parent_0", "parent_1", "root"],
+                        "edges": [
+                            ["parent_0", "root"], ["parent_1", "root"]
+                        ],
+                    },
+                    "n_steps": (
+                        len(parents[0]["steps"])
+                        + len(parents[1]["steps"])
+                        + len(B["steps"])
+                    ),
+                    "source": f"gsm_join_{split}",
+                }
+                break
+            if built is not None:
+                break
+        if built is not None:
+            out.append(built)
+        if len(out) >= limit:
+            break
+
+    write_jsonl(os.path.join(data_dir, f"gsm_join_{split}.jsonl"), out)
+    return out
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--which", default="all",
-                    choices=["all", "math_l5", "gsm_deep", "gsm_chain"])
+                    choices=["all", "math_l5", "gsm_deep", "gsm_chain", "gsm_join"])
     ap.add_argument("--data-dir", default="data")
     a = ap.parse_args()
     if a.which in ("all", "math_l5"):
@@ -231,3 +367,5 @@ if __name__ == "__main__":
         build_gsm_deep(a.data_dir, "train")
     if a.which in ("all", "gsm_chain"):
         build_gsm_chain(a.data_dir, "test")
+    if a.which in ("all", "gsm_join"):
+        build_gsm_join(a.data_dir, "test")

@@ -28,6 +28,7 @@ python data_prep.py --which all --data-dir data
 | `data/gsm_deep_test.jsonl` | GSM8K problems with >=4 annotated steps (256), with gold intermediate values |
 | `data/gsm_deep_train.jsonl` | Same, train split (4661) |
 | `data/gsm_chain_test.jsonl` | Compositional GSM8K (400): one number in problem B is replaced by the answer to problem A, gold recomputed |
+| `data/gsm_join_test.jsonl` | Three-node GSM join graphs (400): two independently causal parent values feed one recomputed root |
 
 `gsm_chain` entries pass an identity-substitution check (re-evaluating with the
 original number must reproduce the original gold) and filter out percentages,
