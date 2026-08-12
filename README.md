@@ -79,3 +79,6 @@ run_s1.sh run_s2.sh run_g1_g3.sh
 - `EXPERIMENT_ERROR_PROVENANCE_V1_1_727774.md`: frozen negative result for the
   truncation-controlled provenance replication; the join-v2 and hidden-state
   provenance stages are stopped.
+- `EXPERIMENT_MARGINAL_ROOT_UTILITY_GUIDE_V0.md`: zero-GPU action-headroom
+  audit; LOO credit is counterfactually faithful but actionable candidate
+  disagreements are too sparse, so node-position hidden extraction is stopped.

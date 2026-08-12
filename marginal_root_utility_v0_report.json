@@ -1,0 +1,325 @@
+{
+ "outputs": {
+  "dir": "outputs",
+  "primary": true,
+  "n_problems": 137,
+  "nodes": {
+   "n_total": 361,
+   "n_multiclass": 138,
+   "collapse_rate": 0.6177285318559557,
+   "loo_exact_cf_argmax_agreement": 0.9855072463768116
+  },
+  "problems": {
+   "n_multiclass": 79,
+   "n_actionable_loo_vs_frequency": 9,
+   "duplicate_assignment_tuples": 0,
+   "missing_selected_tuple": {
+    "frequency": 3,
+    "loo": 2,
+    "exact_cf": 2
+   }
+  },
+  "accuracy": {
+   "frequency": 0.656934306569343,
+   "loo": 0.7007299270072993,
+   "exact_cf": 0.6934306569343066,
+   "hardcommit": 0.6131386861313869,
+   "recoverable": 0.7007299270072993
+  },
+  "best_nonoracle_baseline": "frequency",
+  "loo_vs_best_baseline_all": {
+   "n": 137,
+   "candidate_acc": 0.7007299270072993,
+   "baseline_acc": 0.656934306569343,
+   "delta": 0.043795620437956206,
+   "mcnemar": {
+    "wins": 6,
+    "losses": 0,
+    "p": 0.03125
+   }
+  },
+  "loo_vs_best_baseline_multiclass": {
+   "n": 79,
+   "candidate_acc": 0.6329113924050633,
+   "baseline_acc": 0.5569620253164557,
+   "delta": 0.0759493670886076,
+   "mcnemar": {
+    "wins": 6,
+    "losses": 0,
+    "p": 0.03125
+   }
+  },
+  "loo_vs_best_baseline_actionable": {
+   "n": 9,
+   "candidate_acc": 1.0,
+   "baseline_acc": 0.3333333333333333,
+   "delta": 0.6666666666666666,
+   "mcnemar": {
+    "wins": 6,
+    "losses": 0,
+    "p": 0.03125
+   }
+  },
+  "loo_vs_exact_cf": {
+   "n": 137,
+   "candidate_acc": 0.7007299270072993,
+   "baseline_acc": 0.6934306569343066,
+   "delta": 0.0072992700729927005,
+   "mcnemar": {
+    "wins": 1,
+    "losses": 0,
+    "p": 1.0
+   }
+  },
+  "gate_checks": {
+   "n_at_least_100": true,
+   "actionable_at_least_20": false,
+   "loo_cf_argmax_agreement_at_least_095": true,
+   "loo_delta_at_least_003": true,
+   "loo_mcnemar_p_below_005": true,
+   "positive_actionable_delta": true
+  },
+  "gate_pass": false
+ },
+ "outputs_gsm_test": {
+  "dir": "outputs_gsm_test",
+  "primary": true,
+  "n_problems": 248,
+  "nodes": {
+   "n_total": 646,
+   "n_multiclass": 99,
+   "collapse_rate": 0.846749226006192,
+   "loo_exact_cf_argmax_agreement": 0.98989898989899
+  },
+  "problems": {
+   "n_multiclass": 71,
+   "n_actionable_loo_vs_frequency": 8,
+   "duplicate_assignment_tuples": 0,
+   "missing_selected_tuple": {}
+  },
+  "accuracy": {
+   "frequency": 0.8709677419354839,
+   "loo": 0.8911290322580645,
+   "exact_cf": 0.8951612903225806,
+   "hardcommit": 0.8548387096774194,
+   "recoverable": 0.8951612903225806
+  },
+  "best_nonoracle_baseline": "frequency",
+  "loo_vs_best_baseline_all": {
+   "n": 248,
+   "candidate_acc": 0.8911290322580645,
+   "baseline_acc": 0.8709677419354839,
+   "delta": 0.020161290322580645,
+   "mcnemar": {
+    "wins": 5,
+    "losses": 0,
+    "p": 0.0625
+   }
+  },
+  "loo_vs_best_baseline_multiclass": {
+   "n": 71,
+   "candidate_acc": 0.8169014084507042,
+   "baseline_acc": 0.7464788732394366,
+   "delta": 0.07042253521126761,
+   "mcnemar": {
+    "wins": 5,
+    "losses": 0,
+    "p": 0.0625
+   }
+  },
+  "loo_vs_best_baseline_actionable": {
+   "n": 8,
+   "candidate_acc": 0.875,
+   "baseline_acc": 0.25,
+   "delta": 0.625,
+   "mcnemar": {
+    "wins": 5,
+    "losses": 0,
+    "p": 0.0625
+   }
+  },
+  "loo_vs_exact_cf": {
+   "n": 248,
+   "candidate_acc": 0.8911290322580645,
+   "baseline_acc": 0.8951612903225806,
+   "delta": -0.004032258064516129,
+   "mcnemar": {
+    "wins": 0,
+    "losses": 1,
+    "p": 1.0
+   }
+  },
+  "gate_checks": {
+   "n_at_least_100": true,
+   "actionable_at_least_20": false,
+   "loo_cf_argmax_agreement_at_least_095": true,
+   "loo_delta_at_least_003": false,
+   "loo_mcnemar_p_below_005": false,
+   "positive_actionable_delta": true
+  },
+  "gate_pass": false
+ },
+ "outputs_gsm_train": {
+  "dir": "outputs_gsm_train",
+  "primary": false,
+  "n_problems": 796,
+  "nodes": {
+   "n_total": 2031,
+   "n_multiclass": 207,
+   "collapse_rate": 0.8980797636632201,
+   "loo_exact_cf_argmax_agreement": 0.9903381642512077
+  },
+  "problems": {
+   "n_multiclass": 164,
+   "n_actionable_loo_vs_frequency": 23,
+   "duplicate_assignment_tuples": 0,
+   "missing_selected_tuple": {
+    "frequency": 2
+   }
+  },
+  "accuracy": {
+   "frequency": 0.907035175879397,
+   "loo": 0.9334170854271356,
+   "exact_cf": 0.9334170854271356,
+   "hardcommit": 0.8881909547738693,
+   "recoverable": 0.9334170854271356
+  },
+  "best_nonoracle_baseline": "frequency",
+  "loo_vs_best_baseline_all": {
+   "n": 796,
+   "candidate_acc": 0.9334170854271356,
+   "baseline_acc": 0.907035175879397,
+   "delta": 0.026381909547738693,
+   "mcnemar": {
+    "wins": 21,
+    "losses": 0,
+    "p": 9.5367431640625e-07
+   }
+  },
+  "loo_vs_best_baseline_multiclass": {
+   "n": 164,
+   "candidate_acc": 0.8719512195121951,
+   "baseline_acc": 0.7439024390243902,
+   "delta": 0.12804878048780488,
+   "mcnemar": {
+    "wins": 21,
+    "losses": 0,
+    "p": 9.5367431640625e-07
+   }
+  },
+  "loo_vs_best_baseline_actionable": {
+   "n": 23,
+   "candidate_acc": 1.0,
+   "baseline_acc": 0.08695652173913043,
+   "delta": 0.9130434782608695,
+   "mcnemar": {
+    "wins": 21,
+    "losses": 0,
+    "p": 9.5367431640625e-07
+   }
+  },
+  "loo_vs_exact_cf": {
+   "n": 796,
+   "candidate_acc": 0.9334170854271356,
+   "baseline_acc": 0.9334170854271356,
+   "delta": 0.0,
+   "mcnemar": {
+    "wins": 0,
+    "losses": 0,
+    "p": 1.0
+   }
+  },
+  "gate_checks": {
+   "n_at_least_100": true,
+   "actionable_at_least_20": true,
+   "loo_cf_argmax_agreement_at_least_095": true,
+   "loo_delta_at_least_003": false,
+   "loo_mcnemar_p_below_005": true,
+   "positive_actionable_delta": true
+  },
+  "gate_pass": false
+ },
+ "outputs_math_train": {
+  "dir": "outputs_math_train",
+  "primary": false,
+  "n_problems": 190,
+  "nodes": {
+   "n_total": 502,
+   "n_multiclass": 187,
+   "collapse_rate": 0.6274900398406374,
+   "loo_exact_cf_argmax_agreement": 0.9786096256684492
+  },
+  "problems": {
+   "n_multiclass": 116,
+   "n_actionable_loo_vs_frequency": 22,
+   "duplicate_assignment_tuples": 0,
+   "missing_selected_tuple": {
+    "frequency": 12,
+    "loo": 10,
+    "exact_cf": 11
+   }
+  },
+  "accuracy": {
+   "frequency": 0.5631578947368421,
+   "loo": 0.6473684210526316,
+   "exact_cf": 0.6421052631578947,
+   "hardcommit": 0.5473684210526316,
+   "recoverable": 0.6526315789473685
+  },
+  "best_nonoracle_baseline": "frequency",
+  "loo_vs_best_baseline_all": {
+   "n": 190,
+   "candidate_acc": 0.6473684210526316,
+   "baseline_acc": 0.5631578947368421,
+   "delta": 0.08421052631578947,
+   "mcnemar": {
+    "wins": 16,
+    "losses": 0,
+    "p": 3.0517578125e-05
+   }
+  },
+  "loo_vs_best_baseline_multiclass": {
+   "n": 116,
+   "candidate_acc": 0.5603448275862069,
+   "baseline_acc": 0.4224137931034483,
+   "delta": 0.13793103448275862,
+   "mcnemar": {
+    "wins": 16,
+    "losses": 0,
+    "p": 3.0517578125e-05
+   }
+  },
+  "loo_vs_best_baseline_actionable": {
+   "n": 22,
+   "candidate_acc": 1.0,
+   "baseline_acc": 0.2727272727272727,
+   "delta": 0.7272727272727273,
+   "mcnemar": {
+    "wins": 16,
+    "losses": 0,
+    "p": 3.0517578125e-05
+   }
+  },
+  "loo_vs_exact_cf": {
+   "n": 190,
+   "candidate_acc": 0.6473684210526316,
+   "baseline_acc": 0.6421052631578947,
+   "delta": 0.005263157894736842,
+   "mcnemar": {
+    "wins": 1,
+    "losses": 0,
+    "p": 1.0
+   }
+  },
+  "gate_checks": {
+   "n_at_least_100": true,
+   "actionable_at_least_20": true,
+   "loo_cf_argmax_agreement_at_least_095": true,
+   "loo_delta_at_least_003": true,
+   "loo_mcnemar_p_below_005": true,
+   "positive_actionable_delta": true
+  },
+  "gate_pass": true
+ },
+ "overall_primary_gate_pass": false
+}
