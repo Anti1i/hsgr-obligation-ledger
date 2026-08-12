@@ -78,3 +78,27 @@
 #   and linear to validate a hierarchy-conditioned HSGR Guide. Do not run the
 #   predicted-program, edit-oracle, GPU, or hidden-state stages on FinQA under
 #   this protocol. Full result: EXPERIMENT_FINQA_STRUCTURE_AUDIT_728892.md.
+
+# EXECUTABLE-DAG BENCHMARK AUDIT P0 (job 728924, commit 1a1a7d4)
+#   Frozen operation-dependency graph definition; zero model / zero GPU.
+#   MultiHiertt dev: programs=842, deep=187, join=18, reuse=0,
+#     deep+join=16, deep+join+reuse=0 -> STRUCTURE FAIL.
+#   HiTab dev: programs=1671, parse=12.5%, deep=14, join=4, reuse=0 -> FAIL.
+#   MathQA test: programs=2985, parse=100%, deep=2083, join=1576, reuse=535,
+#     deep+join=1386, deep+join+reuse=535, diamond=108 -> STRUCTURE PASS.
+#   Full result: EXPERIMENT_EXECUTABLE_DAG_BENCHMARK_AUDIT_728924.md.
+
+# MATHQA EXECUTOR AUDIT P0-B (job 728934, commit ce9333c) — GATE FAIL
+#   Root-connected deep+join+reuse targets: train=5321, test=535.
+#   Execution coverage: train=98.65%, test=97.76% (both pass).
+#   Gold-option agreement among executed: train=61.50%, test=59.27%; frozen
+#     requirement >=95% -> both FAIL. Unsupported ops are too rare to explain it;
+#     read-only inspection confirms many semantically wrong native programs.
+#   Although 3228 train / 310 test targets execute and match, treating this
+#     outcome-filtered subset as a PASS would be post-hoc. Under the frozen stop
+#     rule do not run Qwen, atomic-edit, GPU, or hidden-state stages on MathQA.
+#   Full result: EXPERIMENT_MATHQA_EXECUTOR_AUDIT_728934.md.
+#
+# CURRENT BENCHMARK VERDICT: none of FinQA, MultiHiertt, MathQA, or HiTab passes
+#   both the structural and executable-gold requirements under a pre-registered
+#   native-data protocol. Stop hopping standard numerical-reasoning benchmarks.
