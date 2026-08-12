@@ -22,6 +22,12 @@ PROTOCOL = "EXPERIMENT_PROTOCOL_JOIN_VIABILITY_EASY_V2.md"
 MODEL_DEFAULT = "Qwen/Qwen2.5-7B-Instruct"
 CALIBRATION_N = 96
 CONFIRMATION_N = 128
+MAX_NEW_BY_ARM = {
+    "direct": 512,
+    "parent_0": 192,
+    "parent_1": 192,
+    "gold_root": 192,
+}
 EXPECTED_SHA256 = {
     "calibration": "576fcbf7d6cee0d0d3c9e4a1cf059c0d474b17f675da183c1f47e41df30ae129",
     "confirmation": "5d274c136e149481e47b7ebe534599f7f899efc8e9ae073cce757b3c95c4e1ad",
@@ -85,7 +91,12 @@ def prompt_tokens(runner: Runner, user: str) -> int:
 
 def run_units(
     runner: Runner, rows: list[dict], out_dir: str, batch_size: int,
+    max_new_by_arm: dict[str, int] | None = None,
 ) -> dict[tuple[int, str], dict]:
+    budgets = dict(MAX_NEW_BY_ARM if max_new_by_arm is None else max_new_by_arm)
+    expected_arms = {"direct", "parent_0", "parent_1", "gold_root"}
+    if set(budgets) != expected_arms or min(budgets.values()) <= 0:
+        raise ValueError(f"invalid generation budgets: {budgets}")
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, "calls.jsonl")
     done = {(int(row["id"]), row["arm"]): row for row in jread(path)}
@@ -94,23 +105,23 @@ def run_units(
         q0, q1, root = split_questions(row["problem"])
         direct = DIRECT_USER.format(problem=row["problem"])
         arms = [
-            ("direct", direct, 512),
-            ("parent_0", PARENT_USER.format(question=q0), 192),
-            ("parent_1", PARENT_USER.format(question=q1), 192),
+            ("direct", direct, budgets["direct"]),
+            ("parent_0", PARENT_USER.format(question=q0), budgets["parent_0"]),
+            ("parent_1", PARENT_USER.format(question=q1), budgets["parent_1"]),
         ]
         gold = [str(value) for value in row["parent_answers"]]
         bound = bind_root(root, gold[0], gold[1])
         arms.append((
             "gold_root",
             ROOT_USER.format(parent_0=gold[0], parent_1=gold[1], root=bound),
-            192,
+            budgets["gold_root"],
         ))
         for arm, user, max_new in arms:
             if (row["id"], arm) not in done:
                 units.append((row, arm, user, max_new))
 
     writer = JWriter(path)
-    for max_new in (512, 192):
+    for max_new in sorted(set(budgets.values()), reverse=True):
         selected = [unit for unit in units if unit[3] == max_new]
         for start in range(0, len(selected), batch_size):
             batch = selected[start:start + batch_size]
@@ -143,13 +154,22 @@ def fraction(values: list[bool]) -> float:
 
 def analyze(
     rows: list[dict], calls: dict[tuple[int, str], dict], split: str,
+    expected_max_new_by_arm: dict[str, int] | None = None,
+    protocol: str = PROTOCOL,
+    max_token_cap_rate: float | None = None,
 ) -> dict:
+    budgets = dict(
+        MAX_NEW_BY_ARM
+        if expected_max_new_by_arm is None
+        else expected_max_new_by_arm
+    )
     expected_arms = ("direct", "parent_0", "parent_1", "gold_root")
     complete = all((row["id"], arm) in calls for row in rows for arm in expected_arms)
     direct_hits = []
     parent_hits = []
     root_hits = []
     validity = {arm: [] for arm in expected_arms}
+    at_token_cap = {arm: [] for arm in expected_arms}
     accounting = []
     for row in rows:
         pid = row["id"]
@@ -165,14 +185,21 @@ def analyze(
         for arm in expected_arms:
             record = calls[(pid, arm)]
             validity[arm].append(record["answer"] is not None)
+            at_token_cap[arm].append(
+                int(record.get("generated_tokens", -1))
+                >= int(record.get("max_new", budgets[arm]))
+            )
             accounting.append(
                 record.get("calls") == 1
-                and record.get("max_new") == (512 if arm == "direct" else 192)
+                and record.get("max_new") == budgets[arm]
             )
     direct_accuracy = fraction(direct_hits)
     parent_accuracy = fraction(parent_hits)
     gold_root_accuracy = fraction(root_hits)
     parse_validity = {arm: fraction(values) for arm, values in validity.items()}
+    token_cap_rate = {
+        arm: fraction(values) for arm, values in at_token_cap.items()
+    }
     thresholds = (
         {"direct_low": 0.30, "direct_high": 0.70, "parent": 0.70,
          "root": 0.70, "gap": 0.10, "n": CALIBRATION_N}
@@ -191,8 +218,10 @@ def analyze(
         "parse_validity": min(parse_validity.values()) >= 0.95,
         "one_call_accounting": all(accounting),
     }
+    if max_token_cap_rate is not None:
+        gates["token_cap_rate"] = max(token_cap_rate.values()) <= max_token_cap_rate
     return {
-        "protocol": PROTOCOL,
+        "protocol": protocol,
         "split": split,
         "n": len(rows),
         "ids": [row["id"] for row in rows],
@@ -204,6 +233,7 @@ def analyze(
             "gold_root_minus_direct": gold_root_accuracy - direct_accuracy,
         },
         "parse_validity": parse_validity,
+        "token_cap_rate": token_cap_rate,
         "cost": {
             "calls": len(rows) * 4,
             "prompt_tokens": sum(record["prompt_tokens"] for record in calls.values()),
