@@ -68,3 +68,13 @@
 #   (b) stronger verifier / larger n — cost up and claim shifts;
 #   (c) rewrite around the falsifications, V3 readability, and the unresolved
 #       selection gap; do not claim that HSGR Guide is already effective.
+
+# FINQA PROGRAM-INTERVENTION STAGE A (job 728892, commit 9e96ad0) — GATE FAIL
+#   Independent gold parse/execution: 100% on train/dev/public test.
+#   Public test n=1147: 1-step=654, 2-step=409, deep(depth>=3,length>=3)=71,
+#   two-reference join=33, deep+join=21, branching=8.
+#   Frozen structural gates: deep>=150 FAIL; join>=100 FAIL.
+#   Decision: FinQA is valid for short atomic program repair but is too shallow
+#   and linear to validate a hierarchy-conditioned HSGR Guide. Do not run the
+#   predicted-program, edit-oracle, GPU, or hidden-state stages on FinQA under
+#   this protocol. Full result: EXPERIMENT_FINQA_STRUCTURE_AUDIT_728892.md.
