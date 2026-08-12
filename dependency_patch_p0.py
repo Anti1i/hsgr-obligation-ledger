@@ -19,6 +19,13 @@ FEATURE_LAYERS = (7, 14, 21)
 OPS = ("+", "-", "*")
 
 
+def json_scalar(value):
+    """Convert NumPy scalar diagnostics without changing experiment values."""
+    if value.__class__.__module__.startswith("numpy") and hasattr(value, "item"):
+        return value.item()
+    raise TypeError(f"Object of type {value.__class__.__name__} is not JSON serializable")
+
+
 def apply_op(left: int, op: str, right: int) -> int:
     if op == "+":
         return (left + right) % 10
@@ -729,12 +736,15 @@ def main(args):
     }
     report_path = os.path.join(args.out_dir, "dependency_patch_p0_report.json")
     with open(report_path, "w", encoding="utf-8") as handle:
-        json.dump(report, handle, ensure_ascii=False, indent=2)
+        json.dump(report, handle, ensure_ascii=False, indent=2, default=json_scalar)
     cases_path = os.path.join(args.out_dir, "dependency_patch_p0_cases.jsonl")
     with open(cases_path, "w", encoding="utf-8") as handle:
         for case in cases:
             handle.write(json.dumps(asdict(case), ensure_ascii=False) + "\n")
-    print(json.dumps(report, ensure_ascii=False, indent=2), flush=True)
+    print(
+        json.dumps(report, ensure_ascii=False, indent=2, default=json_scalar),
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 import unittest
+import json
 
 from dependency_patch_p0 import (
     apply_op,
@@ -7,6 +8,7 @@ from dependency_patch_p0 import (
     choose_donors,
     execute,
     exact_sign_p,
+    json_scalar,
 )
 
 
@@ -60,6 +62,10 @@ class DependencyPatchP0Test(unittest.TestCase):
     def test_auc_and_sign_test(self):
         self.assertAlmostEqual(auc([1, 1, 0, 0], [0.9, 0.8, 0.2, 0.1]), 1.0)
         self.assertAlmostEqual(exact_sign_p(3, 0), 0.125)
+
+    def test_json_scalar_rejects_unrelated_objects(self):
+        with self.assertRaises(TypeError):
+            json.dumps({"bad": object()}, default=json_scalar)
 
 
 if __name__ == "__main__":
