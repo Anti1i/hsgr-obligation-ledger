@@ -370,6 +370,7 @@ def extract_dual_view_features(
             for layer, views in feature_chunks.items()
         },
         "keys": [unit["key"] for unit in units],
+        "metas": [unit.get("meta", {}) for unit in units],
         "accounting": {
             "raw_prompt_tokens": prompt_tokens,
             "response_tokens": response_tokens,
@@ -387,6 +388,7 @@ def hidden_feature_units(
     from structural_hardness_screen import (
         BASE_SYSTEM,
         PARENT_USER,
+        answers_equal,
         split_questions,
     )
 
@@ -409,12 +411,26 @@ def hidden_feature_units(
             "system": BASE_SYSTEM,
             "user": PARENT_USER.format(question=questions[slot]),
             "response": candidate.get("text") or "UNKNOWN",
+            "meta": {
+                "id": pid,
+                "slot": slot,
+                "member_index": member_index,
+                "norm": candidate.get("norm"),
+                "label": int(answers_equal(
+                    candidate.get("answer"), row["parent_answers"][slot]
+                )),
+            },
         })
     root_units = [{
         "key": ("root", int(record["id"]), *record["norms"]),
         "system": BASE_SYSTEM,
         "user": record["user"],
         "response": record.get("text") or "UNKNOWN",
+        "meta": {
+            "id": int(record["id"]),
+            "norms": record["norms"],
+            "label": int(record["label"]),
+        },
     } for record in assignment_records]
     return parent_units, root_units
 

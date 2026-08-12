@@ -22,6 +22,7 @@ METHODS = (
     "nonhidden_bce",
     "root_dual_bce",
     "flat_dual_bce",
+    "parent_probe_router",
     "graph_dual_bce",
     "graph_dual_aeo",
     "graph_dual_energy",
@@ -392,7 +393,188 @@ def view_for_method(method: str) -> str:
     return "dual"
 
 
+def fit_parent_probe(torch, features, labels, groups, train_indices, val_indices, seed):
+    torch.manual_seed(seed)
+    dimension = features.shape[1]
+    width = max(8, int(90000 / max(1, dimension + 2)))
+    model = torch.nn.Sequential(
+        torch.nn.Linear(dimension, width), torch.nn.Tanh(), torch.nn.Linear(width, 1)
+    ).to(features.device)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=2e-3, weight_decay=3e-3)
+    train_labels = labels[train_indices]
+    train_groups = [groups[index] for index in train_indices]
+    weights = equal_graph_weights(torch, train_labels, train_groups)
+    best = (-1.0, 0, None)
+    patience = 0
+    for epoch in range(1, 161):
+        model.train()
+        optimizer.zero_grad()
+        logits = model(features[train_indices]).squeeze(1)
+        losses = torch.nn.functional.binary_cross_entropy_with_logits(
+            logits, train_labels, reduction="none"
+        )
+        (losses * weights).sum().backward()
+        optimizer.step()
+        if epoch % 10:
+            continue
+        model.eval()
+        with torch.no_grad():
+            scores = model(features[val_indices]).squeeze(1).tolist()
+        criterion, count = within_problem_auroc(
+            scores, labels[val_indices].tolist(), [groups[i] for i in val_indices]
+        )
+        if criterion != criterion or count < 5:
+            criterion = auroc(scores, labels[val_indices].tolist())
+        if criterion == criterion and criterion > best[0]:
+            best = (
+                criterion, epoch,
+                {key: value.detach().clone() for key, value in model.state_dict().items()},
+            )
+            patience = 0
+        else:
+            patience += 10
+        if patience >= 80:
+            break
+    if best[2] is None:
+        raise RuntimeError("no valid parent-probe checkpoint")
+    model.load_state_dict(best[2])
+    return model.eval(), best[0], best[1]
+
+
+def refit_parent_probe(torch, features, labels, groups, indices, seed, epochs):
+    torch.manual_seed(seed)
+    dimension = features.shape[1]
+    width = max(8, int(90000 / max(1, dimension + 2)))
+    model = torch.nn.Sequential(
+        torch.nn.Linear(dimension, width), torch.nn.Tanh(), torch.nn.Linear(width, 1)
+    ).to(features.device)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=2e-3, weight_decay=3e-3)
+    selected_labels = labels[indices]
+    selected_groups = [groups[index] for index in indices]
+    weights = equal_graph_weights(torch, selected_labels, selected_groups)
+    for _ in range(max(10, epochs)):
+        model.train()
+        optimizer.zero_grad()
+        logits = model(features[indices]).squeeze(1)
+        losses = torch.nn.functional.binary_cross_entropy_with_logits(
+            logits, selected_labels, reduction="none"
+        )
+        (losses * weights).sum().backward()
+        optimizer.step()
+    return model.eval()
+
+
+def parent_probe_router_oof(torch, payload: dict, seed: int):
+    parent = payload["parent"]
+    parent_metas = parent.get("metas")
+    if not parent_metas or any("label" not in meta for meta in parent_metas):
+        raise RuntimeError("parent correctness metadata missing from hidden payload")
+    device = args_device(torch)
+    parent_pids = [int(meta["id"]) for meta in parent_metas]
+    groups = [(int(meta["id"]), int(meta["slot"])) for meta in parent_metas]
+    labels = torch.tensor(
+        [meta["label"] for meta in parent_metas], dtype=torch.float32, device=device
+    )
+    oof_parent_scores = [None] * len(parent_metas)
+    fold_choices = []
+    for outer in range(5):
+        hold = {
+            pid for pid in set(parent_pids)
+            if stable_bucket(pid, 5, "outer") == outer
+        }
+        outer_test = [index for index, pid in enumerate(parent_pids) if pid in hold]
+        outer_train = [index for index, pid in enumerate(parent_pids) if pid not in hold]
+        validation_pids = {
+            pid for pid in set(parent_pids) - hold
+            if stable_bucket(pid, 5, f"inner-{outer}") == 0
+        }
+        inner_train = [
+            index for index in outer_train if parent_pids[index] not in validation_pids
+        ]
+        inner_val = [
+            index for index in outer_train if parent_pids[index] in validation_pids
+        ]
+        choices = []
+        for layer in LAYERS:
+            features = torch.cat([
+                parent["features"][layer]["last"].float(),
+                parent["features"][layer]["mean"].float(),
+            ], dim=1).to(device)
+            _, criterion, epochs = fit_parent_probe(
+                torch, features, labels, groups, inner_train, inner_val,
+                seed + 1000 * outer + layer,
+            )
+            choices.append((criterion, -layer, layer, epochs))
+        criterion, _, layer, epochs = max(choices)
+        features = torch.cat([
+            parent["features"][layer]["last"].float(),
+            parent["features"][layer]["mean"].float(),
+        ], dim=1).to(device)
+        model = refit_parent_probe(
+            torch, features, labels, groups, outer_train,
+            seed + 8000 + outer, epochs,
+        )
+        with torch.no_grad():
+            scores = model(features[outer_test]).squeeze(1).tolist()
+        for index, score in zip(outer_test, scores):
+            oof_parent_scores[index] = score
+        fold_choices.append({
+            "fold": outer, "layer": layer, "epochs": epochs,
+            "parent_validation_ranking": criterion,
+        })
+    if any(score is None for score in oof_parent_scores):
+        raise RuntimeError("incomplete parent-probe OOF scores")
+    parent_key_map = {
+        tuple(key): index for index, key in enumerate(parent["keys"])
+    }
+    assignment_scores = []
+    for meta in payload["metas"]:
+        pid = int(meta["id"])
+        score = 0.0
+        for slot in (0, 1):
+            members = [
+                oof_parent_scores[parent_key_map[("parent", pid, slot, int(index))]]
+                for index in meta["member_indices"][slot]
+            ]
+            score += sum(members) / len(members)
+        assignment_scores.append(score)
+    assignment_labels = [int(meta["label"]) for meta in payload["metas"]]
+    assignment_pids = [int(meta["id"]) for meta in payload["metas"]]
+    modal = [bool(meta["is_modal"]) for meta in payload["metas"]]
+    _, all_outcomes, all_modal = selection_outcomes(
+        assignment_scores, assignment_labels, assignment_pids, modal
+    )
+    pid_order = []
+    seen = set()
+    for pid in assignment_pids:
+        if pid not in seen:
+            seen.add(pid)
+            pid_order.append(pid)
+    outcome_map = dict(zip(pid_order, zip(all_outcomes, all_modal)))
+    fold_records = []
+    for choice in fold_choices:
+        hold_pids = [
+            pid for pid in pid_order
+            if stable_bucket(pid, 5, "outer") == choice["fold"]
+        ]
+        outcomes = [outcome_map[pid][0] for pid in hold_pids]
+        modal_outcomes = [outcome_map[pid][1] for pid in hold_pids]
+        fold_records.append({
+            **choice,
+            "n_graphs": len(hold_pids),
+            "accuracy": sum(outcomes) / len(outcomes),
+            "modal_accuracy": sum(modal_outcomes) / len(modal_outcomes),
+            "delta": (
+                sum(outcomes) / len(outcomes)
+                - sum(modal_outcomes) / len(modal_outcomes)
+            ),
+        })
+    return assignment_scores, fold_records, 0.0
+
+
 def nested_oof(torch, payload: dict, method: str, seed: int):
+    if method == "parent_probe_router":
+        return parent_probe_router_oof(torch, payload, seed)
     all_scores = [None] * len(payload["metas"])
     fold_records = []
     invariance_max = 0.0
@@ -557,6 +739,10 @@ def report(args) -> None:
         ),
         "energy_plus_1pp_flat": (
             energy["accuracy"] - method_reports["flat_dual_bce"]["accuracy"] >= 0.01
+        ),
+        "energy_plus_1pp_parent_probe_router": (
+            energy["accuracy"]
+            - method_reports["parent_probe_router"]["accuracy"] >= 0.01
         ),
         "energy_plus_1pp_graph_bce": energy["accuracy"] - bce["accuracy"] >= 0.01,
         "energy_plus_1pp_root_only": (

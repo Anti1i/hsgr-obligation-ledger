@@ -131,7 +131,8 @@ energy route then passes development only if every condition holds:
    negative assignments;
 2. at least +3.0 percentage points over modal assignment selection, with
    Holm-adjusted paired `p < 0.05`;
-3. at least +1.0 point over both the non-hidden reader and flat hidden reader;
+3. at least +1.0 point over the non-hidden reader, flat hidden reader, and
+   ordinary per-parent correctness-probe router;
 4. at least +1.0 point over graph-BCE; otherwise energy ranking has not earned
    a distinct mechanism claim even if hidden verification helps;
 5. at least +1.0 point over the root-local-only reader and at least +2.0 points
