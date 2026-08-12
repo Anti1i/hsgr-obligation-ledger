@@ -280,6 +280,145 @@ def pool_dual_view(torch, hidden, spans, matrix):
     return last, mean
 
 
+def teacher_force_ids(tokenizer, system: str, user: str, response: str, max_context: int):
+    """Tokenize prompt and exact response while excluding chat end markers."""
+    messages = (
+        [{"role": "system", "content": system}] if system else []
+    ) + [{"role": "user", "content": user}]
+    prompt = tokenizer.apply_chat_template(
+        messages, tokenize=True, add_generation_prompt=True
+    )
+    response_ids = tokenizer(
+        response or "UNKNOWN", add_special_tokens=False
+    )["input_ids"]
+    if not response_ids:
+        response_ids = tokenizer("UNKNOWN", add_special_tokens=False)["input_ids"]
+    full = list(prompt) + list(response_ids)
+    if len(response_ids) >= max_context:
+        raise ValueError("response alone exceeds maximum context")
+    cut = max(0, len(full) - max_context)
+    full = full[cut:]
+    response_start = max(0, len(prompt) - cut)
+    if response_start >= len(full):
+        raise ValueError("truncation removed the complete response")
+    return full, (response_start, len(full)), len(prompt), len(response_ids)
+
+
+def extract_dual_view_features(
+    runner,
+    units: Sequence[dict],
+    batch_size: int,
+    max_context: int = 2048,
+) -> dict:
+    """Teacher-force exact completions and return fixed projected dual views."""
+    torch = runner.torch
+    tokenizer = runner.tok
+    matrices = projectors(torch, runner.model.config.hidden_size, "cuda")
+    feature_chunks = {
+        layer: {"last": [], "mean": []} for layer in LAYERS
+    }
+    prompt_tokens = response_tokens = processed_tokens = 0
+    for start in range(0, len(units), batch_size):
+        batch = units[start:start + batch_size]
+        encoded = [
+            teacher_force_ids(
+                tokenizer, unit.get("system") or "", unit["user"],
+                unit.get("response") or "", max_context,
+            )
+            for unit in batch
+        ]
+        width = max(len(item[0]) for item in encoded)
+        input_rows, attention_rows, spans = [], [], []
+        for ids, (response_start, response_end), raw_prompt, raw_response in encoded:
+            padding = width - len(ids)
+            input_rows.append([tokenizer.pad_token_id] * padding + ids)
+            attention_rows.append([0] * padding + [1] * len(ids))
+            spans.append((padding + response_start, padding + response_end))
+            prompt_tokens += raw_prompt
+            response_tokens += raw_response
+            processed_tokens += width
+        input_ids = torch.tensor(input_rows, device="cuda")
+        attention = torch.tensor(attention_rows, device="cuda")
+        with torch.no_grad():
+            output = runner.model(
+                input_ids=input_ids,
+                attention_mask=attention,
+                output_hidden_states=True,
+                use_cache=False,
+                return_dict=True,
+            )
+        for layer in LAYERS:
+            last, mean = pool_dual_view(
+                torch, output.hidden_states[layer], spans, matrices[layer]
+            )
+            feature_chunks[layer]["last"].append(last.half().cpu())
+            feature_chunks[layer]["mean"].append(mean.half().cpu())
+        del input_ids, attention, output
+        torch.cuda.empty_cache()
+        print(
+            f"[dual-view] {min(start + batch_size, len(units))}/{len(units)}",
+            flush=True,
+        )
+    return {
+        "layers": LAYERS,
+        "projection_dim": PROJECTION_DIM,
+        "features": {
+            layer: {
+                view: torch.cat(chunks)
+                for view, chunks in views.items()
+            }
+            for layer, views in feature_chunks.items()
+        },
+        "keys": [unit["key"] for unit in units],
+        "accounting": {
+            "raw_prompt_tokens": prompt_tokens,
+            "response_tokens": response_tokens,
+            "processed_forward_tokens": processed_tokens,
+        },
+    }
+
+
+def hidden_feature_units(
+    data_path: str,
+    screen_dir: str,
+    assignment_records: Sequence[dict],
+) -> tuple[list[dict], list[dict]]:
+    """Create unique parent-completion and assignment-root teacher-force units."""
+    from structural_hardness_screen import (
+        BASE_SYSTEM,
+        PARENT_USER,
+        split_questions,
+    )
+
+    rows = {int(row["id"]): row for row in read_jsonl(data_path)}
+    parent_rows = read_jsonl(os.path.join(screen_dir, "calibration", "parents.jsonl"))
+    parents = {(int(row["id"]), int(row["slot"])): row for row in parent_rows}
+    selected_parent_keys = set()
+    for record in assignment_records:
+        pid = int(record["id"])
+        for slot, member_indices in enumerate(record["member_indices"]):
+            for member_index in member_indices:
+                selected_parent_keys.add((pid, slot, int(member_index)))
+    parent_units = []
+    for pid, slot, member_index in sorted(selected_parent_keys):
+        row = rows[pid]
+        questions = split_questions(row["problem"])
+        candidate = parents[(pid, slot)]["candidates"][member_index]
+        parent_units.append({
+            "key": ("parent", pid, slot, member_index),
+            "system": BASE_SYSTEM,
+            "user": PARENT_USER.format(question=questions[slot]),
+            "response": candidate.get("text") or "UNKNOWN",
+        })
+    root_units = [{
+        "key": ("root", int(record["id"]), *record["norms"]),
+        "system": BASE_SYSTEM,
+        "user": record["user"],
+        "response": record.get("text") or "UNKNOWN",
+    } for record in assignment_records]
+    return parent_units, root_units
+
+
 def graph_raw_features(torch, parent_0, parent_1, root, frequencies):
     """Permutation-invariant raw join representation used by all graph losses."""
     parent_mean = 0.5 * (parent_0 + parent_1)
@@ -418,21 +557,68 @@ def assignment_audit(args) -> None:
     print(f"ASSIGNMENT_ACTION_SPACE={'PASS' if report['gate_pass'] else 'FAIL'}")
 
 
+def hidden_extract(args) -> None:
+    import torch
+    from pilot import Runner
+
+    audit_report = read_json(os.path.join(args.out_dir, "assignment_audit_report.json"))
+    if not audit_report.get("gate_pass"):
+        raise SystemExit("assignment action-space gate failed; hidden extraction stopped")
+    assignment_path = os.path.join(
+        args.out_dir, "calibration", "assignment_roots.jsonl"
+    )
+    records = read_jsonl(assignment_path)
+    if not records:
+        raise SystemExit(f"no assignment records under {assignment_path}")
+    parent_units, root_units = hidden_feature_units(
+        args.data, args.screen_dir, records
+    )
+    runner = Runner(args.model)
+    parent_payload = extract_dual_view_features(
+        runner, parent_units, args.batch_size, args.max_context
+    )
+    root_payload = extract_dual_view_features(
+        runner, root_units, args.batch_size, args.max_context
+    )
+    payload = {
+        "model": args.model,
+        "screen_dir": os.path.abspath(args.screen_dir),
+        "assignment_path": os.path.abspath(assignment_path),
+        "parent": parent_payload,
+        "root": root_payload,
+        "metas": [{
+            key: record[key]
+            for key in (
+                "id", "norms", "frequencies", "counts", "member_indices",
+                "is_modal", "label",
+            )
+        } for record in records],
+    }
+    feature_path = os.path.join(args.out_dir, "calibration_dual_features.pt")
+    torch.save(payload, feature_path)
+    print(f"[dual-view] saved {feature_path}", flush=True)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--stage", choices=("assignment-audit", "self-test"), default="self-test"
+        "--stage",
+        choices=("assignment-audit", "hidden-extract", "self-test"),
+        default="self-test",
     )
     parser.add_argument("--data", default="data/gsm_join_train.jsonl")
     parser.add_argument("--screen-dir", default="structural_hardness_screen")
     parser.add_argument("--out-dir", default="hidden_graph_energy_guide")
     parser.add_argument("--model", default="Qwen/Qwen2.5-7B-Instruct")
     parser.add_argument("--batch-size", type=int, default=16)
+    parser.add_argument("--max-context", type=int, default=2048)
     args = parser.parse_args()
     if args.stage == "self-test":
         self_test()
-    else:
+    elif args.stage == "assignment-audit":
         assignment_audit(args)
+    else:
+        hidden_extract(args)
 
 
 if __name__ == "__main__":

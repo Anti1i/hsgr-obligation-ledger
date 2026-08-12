@@ -6,6 +6,7 @@ from hidden_graph_energy_guide import (
     response_spans,
     stable_bucket,
     structural_assignment_gate,
+    teacher_force_ids,
     value_classes,
 )
 
@@ -46,6 +47,22 @@ class HiddenGraphEnergyGuideTest(unittest.TestCase):
         self.assertEqual(response_spans([3, 2], [5, 4], 5), [(3, 5), (3, 5)])
         with self.assertRaises(ValueError):
             response_spans([3], [3], 5)
+
+    def test_teacher_force_truncation_keeps_exact_response(self):
+        class FakeTokenizer:
+            def apply_chat_template(self, messages, tokenize, add_generation_prompt):
+                self.assert_call = (messages, tokenize, add_generation_prompt)
+                return [1, 2, 3, 4, 5]
+
+            def __call__(self, text, add_special_tokens):
+                return {"input_ids": [8, 9] if text == "answer" else [7]}
+
+        ids, span, raw_prompt, raw_response = teacher_force_ids(
+            FakeTokenizer(), "system", "user", "answer", 5
+        )
+        self.assertEqual(ids, [3, 4, 5, 8, 9])
+        self.assertEqual(span, (3, 5))
+        self.assertEqual((raw_prompt, raw_response), (5, 2))
 
     def test_hash_split_is_stable(self):
         values = [stable_bucket(pid, 5, "outer") for pid in range(20)]
