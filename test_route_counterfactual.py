@@ -2,6 +2,7 @@ import unittest
 
 from hsgr_route_counterfactual_eval import holm_adjust, make_model
 from hsgr_route_augmented_eval import make_model as make_augmented_model
+from hsgr_oracle_route_augmented_eval import EXPECTED_CANDIDATES, EXPECTED_PROBLEMS
 from hsgr_structured_hidden_verifier import LAYERS
 from hsgr_route_counterfactual_features import (
     FALLBACK_FOIL,
@@ -13,6 +14,10 @@ from hsgr_route_counterfactual_features import (
 
 
 class RouteCounterfactualTest(unittest.TestCase):
+    def test_oracle_diagnostic_frozen_counts(self):
+        self.assertEqual(EXPECTED_PROBLEMS, 840)
+        self.assertEqual(EXPECTED_CANDIDATES, EXPECTED_PROBLEMS * 8)
+
     def test_plan_parser_rejects_original_question_and_deduplicates(self):
         original = "Who founded the company?"
         raw = (
