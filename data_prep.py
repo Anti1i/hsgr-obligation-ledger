@@ -219,7 +219,10 @@ def build_gsm_chain(data_dir, split="test", limit=400, seed=0, max_ratio=3.0):
     return out
 
 
-def build_gsm_join(data_dir, split="test", limit=400, seed=17, max_ratio=3.0):
+def build_gsm_join(
+    data_dir, split="test", limit=400, seed=17, max_ratio=3.0,
+    max_parent_steps=None, max_root_steps=None, output_stem="gsm_join",
+):
     """Compose a three-node join: two independent parents feed one root.
 
     Two distinct numeric literals in problem B are replaced by the answers to
@@ -242,6 +245,7 @@ def build_gsm_join(data_dir, split="test", limit=400, seed=17, max_ratio=3.0):
         if row["gold"] > 1
         and row["gold"].denominator == 1
         and not UNITLESS_RE.search(row["q"])
+        and (max_parent_steps is None or len(row["steps"]) <= max_parent_steps)
     ]
     rng = random.Random(seed)
     root_order = list(range(len(parsed)))
@@ -250,6 +254,8 @@ def build_gsm_join(data_dir, split="test", limit=400, seed=17, max_ratio=3.0):
 
     for bi in root_order:
         B = parsed[bi]
+        if max_root_steps is not None and len(B["steps"]) > max_root_steps:
+            continue
         literals = []
         for text, value in substitutable_numbers(B):
             if all(text != old for old, _ in literals):
@@ -340,7 +346,7 @@ def build_gsm_join(data_dir, split="test", limit=400, seed=17, max_ratio=3.0):
                         + len(parents[1]["steps"])
                         + len(B["steps"])
                     ),
-                    "source": f"gsm_join_{split}",
+                    "source": f"{output_stem}_{split}",
                 }
                 break
             if built is not None:
@@ -350,7 +356,7 @@ def build_gsm_join(data_dir, split="test", limit=400, seed=17, max_ratio=3.0):
         if len(out) >= limit:
             break
 
-    write_jsonl(os.path.join(data_dir, f"gsm_join_{split}.jsonl"), out)
+    write_jsonl(os.path.join(data_dir, f"{output_stem}_{split}.jsonl"), out)
     return out
 
 
@@ -358,7 +364,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--which", default="all",
                     choices=["all", "math_l5", "gsm_deep", "gsm_chain", "gsm_join",
-                             "gsm_join_train"])
+                             "gsm_join_train", "gsm_join_easy"])
     ap.add_argument("--data-dir", default="data")
     ap.add_argument("--join-train-limit", type=int, default=400)
     a = ap.parse_args()
@@ -374,4 +380,15 @@ if __name__ == "__main__":
     if a.which == "gsm_join_train":
         build_gsm_join(
             a.data_dir, "train", limit=a.join_train_limit, seed=29
+        )
+    if a.which == "gsm_join_easy":
+        build_gsm_join(
+            a.data_dir, "train", limit=400, seed=41,
+            max_parent_steps=3, max_root_steps=2,
+            output_stem="gsm_join_easy",
+        )
+        build_gsm_join(
+            a.data_dir, "test", limit=200, seed=43,
+            max_parent_steps=3, max_root_steps=2,
+            output_stem="gsm_join_easy",
         )
