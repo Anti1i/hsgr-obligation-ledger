@@ -197,7 +197,7 @@ def execute_formula(problem: str, formula: str) -> float:
 
 
 def correct_option_value(options: str, correct: str) -> float:
-    labels = list(re.finditer(r"(?i)(?:^|[,;])\s*([a-e])\s*\)", options))
+    labels = list(re.finditer(r"(?i)(?<![a-z])([a-e])\s*\)", options))
     wanted = correct.strip().lower()
     for position, label in enumerate(labels):
         if label.group(1).lower() != wanted:
@@ -205,12 +205,14 @@ def correct_option_value(options: str, correct: str) -> float:
         start = label.end()
         end = labels[position + 1].start() if position + 1 < len(labels) else len(options)
         segment = options[start:end]
+        segment = re.sub(r"(?<!\d)([-+])\s+(?=\d)", r"\1", segment)
         numbers = NUMBER_RE.findall(segment)
         if not numbers:
             raise ExecutionFailure("nonnumeric_option")
         numerator = float(numbers[0].replace(",", ""))
         first_end = segment.find(numbers[0]) + len(numbers[0])
-        if len(numbers) >= 2 and "/" in segment[first_end:segment.find(numbers[1])]:
+        separator = segment[first_end:segment.find(numbers[1])] if len(numbers) >= 2 else ""
+        if len(numbers) >= 2 and ("/" in separator or ":" in separator or "∶" in separator):
             denominator = float(numbers[1].replace(",", ""))
             return numerator / denominator
         return numerator
@@ -221,6 +223,7 @@ def audit_rows(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     counters: collections.Counter[str] = collections.Counter()
     failures: collections.Counter[str] = collections.Counter()
     mismatches: List[Dict[str, Any]] = []
+    target_mismatches: List[Dict[str, Any]] = []
     target_failures: List[Dict[str, Any]] = []
     for position, row in enumerate(rows):
         formula = row.get("linear_formula")
@@ -248,6 +251,10 @@ def audit_rows(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
             counters["target_matched"] += int(connected_target and matched)
             if not matched and len(mismatches) < 30:
                 mismatches.append({"position": position, "actual": actual, "expected": expected})
+            if connected_target and not matched and len(target_mismatches) < 30:
+                target_mismatches.append(
+                    {"position": position, "actual": actual, "expected": expected}
+                )
         except Exception as exc:
             key = str(exc) or type(exc).__name__
             failures[key] += 1
@@ -264,6 +271,7 @@ def audit_rows(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         "target_answer_agreement": rate("target_matched", "target_executed"),
         "failures": dict(failures.most_common()),
         "mismatch_examples": mismatches,
+        "target_mismatch_examples": target_mismatches,
         "target_failure_examples": target_failures,
     }
 

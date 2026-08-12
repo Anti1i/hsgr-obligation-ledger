@@ -25,6 +25,10 @@ class MathQaExecutorAuditTest(unittest.TestCase):
     def test_correct_option_and_fraction(self):
         self.assertEqual(correct_option_value("a ) 3, b ) 1 / 2, c ) none", "b"), 0.5)
 
+    def test_correct_option_spaced_negative_and_ratio(self):
+        self.assertEqual(correct_option_value("a ) 0 b ) - 49 c ) 2", "b"), -49.0)
+        self.assertAlmostEqual(correct_option_value("a ) 1 : 729, b ) 2", "a"), 1/729)
+
     def test_connected_dag_target(self):
         row = {
             "Problem": "values are 2, 3, 4 and 1",
