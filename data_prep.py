@@ -357,8 +357,10 @@ def build_gsm_join(data_dir, split="test", limit=400, seed=17, max_ratio=3.0):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--which", default="all",
-                    choices=["all", "math_l5", "gsm_deep", "gsm_chain", "gsm_join"])
+                    choices=["all", "math_l5", "gsm_deep", "gsm_chain", "gsm_join",
+                             "gsm_join_train"])
     ap.add_argument("--data-dir", default="data")
+    ap.add_argument("--join-train-limit", type=int, default=400)
     a = ap.parse_args()
     if a.which in ("all", "math_l5"):
         build_math_l5(a.data_dir)
@@ -369,3 +371,7 @@ if __name__ == "__main__":
         build_gsm_chain(a.data_dir, "test")
     if a.which in ("all", "gsm_join"):
         build_gsm_join(a.data_dir, "test")
+    if a.which == "gsm_join_train":
+        build_gsm_join(
+            a.data_dir, "train", limit=a.join_train_limit, seed=29
+        )
