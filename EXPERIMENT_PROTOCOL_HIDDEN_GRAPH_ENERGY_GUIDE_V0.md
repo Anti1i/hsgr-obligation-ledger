@@ -104,6 +104,9 @@ reader must be unchanged, whereas the flat ordered reader need not be.
 ## 5. Evaluation and selection discipline
 
 - Development is five-fold problem-disjoint nested OOF on calibration graphs.
+- Every graph has equal total training weight.  On mixed-label graphs, positive
+  and negative assignments each receive half of that graph's weight; pairwise
+  energy losses are averaged within a graph before averaging across graphs.
 - Layer, hidden width, regularization, AEO entropy weight, energy margin, and
   frequency-prior weight are chosen only on inner training/validation graphs.
 - The method family is fixed in advance: both AEO and energy are reported.  A

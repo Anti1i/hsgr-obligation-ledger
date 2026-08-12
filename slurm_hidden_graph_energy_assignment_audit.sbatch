@@ -4,7 +4,7 @@
 #SBATCH --gres=gpu:h100-47:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH --time=02:00:00
+#SBATCH --time=03:00:00
 #SBATCH --output=/mnt/scratch/z/zitong/dch-hsgr/logs/dch-henergy0a-%j.out
 
 set -euo pipefail
@@ -39,8 +39,9 @@ nvidia-smi --query-gpu=index,name,memory.total,memory.free --format=csv || exit 
 cp -r "$REPO/." "$WORK/"
 cd "$WORK"
 
-"$PY" -m unittest -v test_hidden_graph_energy_guide.py
+"$PY" -m unittest -v test_hidden_graph_energy_guide.py test_hidden_graph_energy_train.py
 "$PY" hidden_graph_energy_guide.py --stage self-test
+"$PY" hidden_graph_energy_train.py --self-test
 bash -n run_hidden_graph_energy_assignment_audit.sh
 
 export PY SCREEN_DIR
@@ -49,5 +50,29 @@ bash run_hidden_graph_energy_assignment_audit.sh 2>&1 \
 RC=${PIPESTATUS[0]}
 cp -f hidden_graph_energy_guide/assignment_audit_report.json \
   "$SCR/logs/hidden_graph_energy_assignment_report_${SLURM_JOB_ID}.json" 2>/dev/null || true
+GATE_PASS="$($PY - <<'PYEOF'
+import json
+with open("hidden_graph_energy_guide/assignment_audit_report.json", encoding="utf-8") as handle:
+    print("1" if json.load(handle).get("gate_pass") else "0")
+PYEOF
+)"
+if [ "$GATE_PASS" = 1 ]; then
+  echo "ASSIGNMENT_GATE_PASS: extracting frozen dual-view hidden states"
+  "$PY" hidden_graph_energy_guide.py \
+    --stage hidden-extract \
+    --data data/gsm_join_train.jsonl \
+    --screen-dir "$SCREEN_DIR" \
+    --out-dir hidden_graph_energy_guide \
+    --model Qwen/Qwen2.5-7B-Instruct \
+    --batch-size 8 \
+    --max-context 2048
+  "$PY" hidden_graph_energy_train.py \
+    --features hidden_graph_energy_guide/calibration_dual_features.pt \
+    --report hidden_graph_energy_guide/oof_report.json
+  cp -f hidden_graph_energy_guide/oof_report.json \
+    "$SCR/logs/hidden_graph_energy_oof_report_${SLURM_JOB_ID}.json"
+else
+  echo "ASSIGNMENT_GATE_FAIL: hidden extraction and reader training stopped"
+fi
 echo "JOB_DONE rc=$RC"
 exit "$RC"

@@ -434,18 +434,28 @@ def graph_raw_features(torch, parent_0, parent_1, root, frequencies):
     )
 
 
-def aeo_asymmetric_loss(torch, logits, labels, entropy_weight: float):
+def aeo_asymmetric_loss(
+    torch, logits, labels, entropy_weight: float, weights=None
+):
     """Positive CE plus maximum-entropy regularization on negative assignments."""
     positive = labels > 0.5
     negative = ~positive
     if not bool(positive.any()) or not bool(negative.any()):
         raise ValueError("AEO loss requires both positive and negative assignments")
-    positive_ce = torch.nn.functional.softplus(-logits[positive]).mean()
+    positive_values = torch.nn.functional.softplus(-logits[positive])
+    positive_ce = (
+        (positive_values * weights[positive]).sum() / weights[positive].sum()
+        if weights is not None else positive_values.mean()
+    )
     probability = torch.sigmoid(logits[negative]).clamp(1e-6, 1.0 - 1e-6)
-    entropy = -(
+    entropy_values = -(
         probability * torch.log(probability)
         + (1.0 - probability) * torch.log(1.0 - probability)
-    ).mean()
+    )
+    entropy = (
+        (entropy_values * weights[negative]).sum() / weights[negative].sum()
+        if weights is not None else entropy_values.mean()
+    )
     return positive_ce - entropy_weight * entropy
 
 
@@ -454,19 +464,22 @@ def pairwise_energy_loss(torch, scores, labels, problem_ids, margin: float):
     by_problem = defaultdict(lambda: {0: [], 1: []})
     for index, (label, pid) in enumerate(zip(labels.tolist(), problem_ids)):
         by_problem[pid][int(label > 0.5)].append(index)
-    positive_indices, negative_indices = [], []
+    graph_losses = []
     for groups in by_problem.values():
+        positive_indices, negative_indices = [], []
         for positive in groups[1]:
             for negative in groups[0]:
                 positive_indices.append(positive)
                 negative_indices.append(negative)
-    if not positive_indices:
+        if positive_indices:
+            pos = torch.tensor(positive_indices, device=scores.device)
+            neg = torch.tensor(negative_indices, device=scores.device)
+            graph_losses.append(torch.nn.functional.softplus(
+                margin - (scores[pos] - scores[neg])
+            ).mean())
+    if not graph_losses:
         raise ValueError("pairwise energy loss requires a mixed-label graph")
-    pos = torch.tensor(positive_indices, device=scores.device)
-    neg = torch.tensor(negative_indices, device=scores.device)
-    return torch.nn.functional.softplus(
-        margin - (scores[pos] - scores[neg])
-    ).mean()
+    return torch.stack(graph_losses).mean()
 
 
 def summarize_assignment_space(records: Sequence[dict]) -> dict:
@@ -589,8 +602,8 @@ def hidden_extract(args) -> None:
         "metas": [{
             key: record[key]
             for key in (
-                "id", "norms", "frequencies", "counts", "member_indices",
-                "is_modal", "label",
+                "id", "norms", "bindings", "frequencies", "counts",
+                "member_indices", "is_modal", "label",
             )
         } for record in records],
     }
