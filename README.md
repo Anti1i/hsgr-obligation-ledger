@@ -73,3 +73,9 @@ data/                 source and derived datasets
 outputs*/             prior pipeline outputs (JSONL; .pt features not committed)
 run_s1.sh run_s2.sh run_g1_g3.sh
 ```
+
+## Route decisions
+
+- `EXPERIMENT_ERROR_PROVENANCE_V1_1_727774.md`: frozen negative result for the
+  truncation-controlled provenance replication; the join-v2 and hidden-state
+  provenance stages are stopped.
