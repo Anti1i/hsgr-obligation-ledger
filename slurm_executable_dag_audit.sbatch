@@ -26,7 +26,15 @@ cd "$WORK/code"
 "$PY" executable_dag_audit.py --self-test
 
 git clone --depth 1 https://github.com/psunlpgroup/MultiHiertt.git "$SRC/MultiHiertt-code"
-git clone --depth 1 https://github.com/microsoft/HiTab.git "$SRC/HiTab"
+
+HITAB_COMMIT="$(git ls-remote https://github.com/microsoft/HiTab.git refs/heads/main | awk '{print $1}')"
+test -n "$HITAB_COMMIT"
+mkdir -p "$SRC/HiTab/data"
+for split in train dev test; do
+  curl -L --fail --retry 3 --connect-timeout 30 \
+    "https://raw.githubusercontent.com/microsoft/HiTab/$HITAB_COMMIT/data/${split}_samples.jsonl" \
+    -o "$SRC/HiTab/data/${split}_samples.jsonl"
+done
 
 "$PY" -m pip install --quiet --target "$VENDOR" 'gdown==5.2.0'
 PYTHONPATH="$VENDOR" "$PY" -m gdown --folder \
@@ -39,7 +47,6 @@ curl -L --fail --retry 3 --connect-timeout 30 \
 unzip -q "$SRC/MathQA.zip" -d "$SRC/MathQA"
 
 MULTI_COMMIT="$(git -C "$SRC/MultiHiertt-code" rev-parse HEAD)"
-HITAB_COMMIT="$(git -C "$SRC/HiTab" rev-parse HEAD)"
 MATHQA_SHA="$(sha256sum "$SRC/MathQA.zip" | awk '{print $1}')"
 "$PY" -c 'import json,sys; json.dump({"multihiertt_repo_commit":sys.argv[1],"multihiertt_dataset_url":sys.argv[2],"mathqa_url":sys.argv[3],"mathqa_zip_sha256":sys.argv[4],"hitab_repo_commit":sys.argv[5]},open("source_meta.json","w"),indent=1)' \
   "$MULTI_COMMIT" \
