@@ -1,46 +1,40 @@
-"""Length-repaired progressive viability screen for the frozen easy join."""
+"""Frozen 14B progressive screen on the unchanged easy-join benchmark."""
 from __future__ import annotations
 
 import argparse
 import os
 
 import join_viability_easy_v2 as v2
+import join_viability_easy_v2_1 as v21
 
 
-PROTOCOL = "EXPERIMENT_PROTOCOL_JOIN_VIABILITY_EASY_V2_1.md"
-MAX_NEW_BY_ARM = {
-    "direct": 1536,
-    "parent_0": 512,
-    "parent_1": 512,
-    "gold_root": 512,
-}
-MAX_TOKEN_CAP_RATE = 0.05
+PROTOCOL = "EXPERIMENT_PROTOCOL_JOIN_VIABILITY_EASY_V3.md"
+MODEL_REPO = "Qwen/Qwen2.5-14B-Instruct"
+MODEL_REVISION = "cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8"
+MODEL_CACHE_DIR = "models--Qwen--Qwen2.5-14B-Instruct"
 
 
-def analyze(
-    rows: list[dict],
-    calls: dict[tuple[int, str], dict],
-    split: str,
-    protocol: str = PROTOCOL,
-) -> dict:
-    return v2.analyze(
-        rows,
-        calls,
-        split,
-        expected_max_new_by_arm=MAX_NEW_BY_ARM,
-        protocol=protocol,
-        max_token_cap_rate=MAX_TOKEN_CAP_RATE,
+def model_snapshot(hf_home: str) -> str:
+    return os.path.join(
+        hf_home, "hub", MODEL_CACHE_DIR, "snapshots", MODEL_REVISION
     )
 
 
+def analyze(rows: list[dict], calls: dict[tuple[int, str], dict], split: str) -> dict:
+    report = v21.analyze(rows, calls, split, protocol=PROTOCOL)
+    report["model"] = {"repo": MODEL_REPO, "revision": MODEL_REVISION}
+    return report
+
+
 def self_test() -> None:
-    assert MAX_NEW_BY_ARM == {
+    assert len(MODEL_REVISION) == 40
+    assert set(MODEL_REVISION) <= set("0123456789abcdef")
+    assert v21.MAX_NEW_BY_ARM == {
         "direct": 1536,
         "parent_0": 512,
         "parent_1": 512,
         "gold_root": 512,
     }
-    assert MAX_TOKEN_CAP_RATE == 0.05
     print("SELF_TEST_OK")
 
 
@@ -48,14 +42,19 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--calibration-data", default="data/gsm_join_easy_train.jsonl")
     parser.add_argument("--confirmation-data", default="data/gsm_join_easy_test.jsonl")
-    parser.add_argument("--out-dir", default="join_viability_easy_v2_1")
-    parser.add_argument("--model", default=v2.MODEL_DEFAULT)
+    parser.add_argument("--out-dir", default="join_viability_easy_v3")
+    parser.add_argument("--hf-home", default=os.environ.get("HF_HOME", ""))
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
     if args.self_test:
         self_test()
         return
+    if not args.hf_home:
+        raise ValueError("--hf-home or HF_HOME is required")
+    snapshot = model_snapshot(args.hf_home)
+    if not os.path.isdir(snapshot):
+        raise FileNotFoundError(f"frozen model snapshot not found: {snapshot}")
 
     calibration = v2.load_subset(
         args.calibration_data, "calibration", v2.CALIBRATION_N
@@ -64,14 +63,14 @@ def main() -> None:
         args.confirmation_data, "confirmation", v2.CONFIRMATION_N
     )
     os.makedirs(args.out_dir, exist_ok=True)
-    runner = v2.Runner(args.model)
+    runner = v2.Runner(snapshot)
 
     calibration_calls = v2.run_units(
         runner,
         calibration,
         os.path.join(args.out_dir, "calibration"),
         args.batch_size,
-        max_new_by_arm=MAX_NEW_BY_ARM,
+        max_new_by_arm=v21.MAX_NEW_BY_ARM,
     )
     calibration_report = analyze(calibration, calibration_calls, "calibration")
     v2.write_report(
@@ -83,6 +82,7 @@ def main() -> None:
             os.path.join(args.out_dir, "report.json"),
             {
                 "protocol": PROTOCOL,
+                "model": {"repo": MODEL_REPO, "revision": MODEL_REVISION},
                 "calibration": calibration_report,
                 "confirmation": None,
                 "gate_pass": False,
@@ -95,7 +95,7 @@ def main() -> None:
         confirmation,
         os.path.join(args.out_dir, "confirmation"),
         args.batch_size,
-        max_new_by_arm=MAX_NEW_BY_ARM,
+        max_new_by_arm=v21.MAX_NEW_BY_ARM,
     )
     confirmation_report = analyze(confirmation, confirmation_calls, "confirmation")
     v2.write_report(
@@ -107,6 +107,7 @@ def main() -> None:
         os.path.join(args.out_dir, "report.json"),
         {
             "protocol": PROTOCOL,
+            "model": {"repo": MODEL_REPO, "revision": MODEL_REVISION},
             "calibration": calibration_report,
             "confirmation": confirmation_report,
             "gate_pass": confirmation_report["gate_pass"],
