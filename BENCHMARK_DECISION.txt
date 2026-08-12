@@ -93,7 +93,8 @@
 #   Execution coverage: train=98.65%, test=97.76% (both pass).
 #   Gold-option agreement among executed: train=61.50%, test=59.27%; frozen
 #     requirement >=95% -> both FAIL. Unsupported ops are too rare to explain it;
-#     read-only inspection confirms many semantically wrong native programs.
+#     target-only inspection finds both clear program inconsistencies and some
+#     rounding near-misses under the fixed 1% tolerance.
 #   Although 3228 train / 310 test targets execute and match, treating this
 #     outcome-filtered subset as a PASS would be post-hoc. Under the frozen stop
 #     rule do not run Qwen, atomic-edit, GPU, or hidden-state stages on MathQA.

@@ -48,19 +48,23 @@ test answer-agreement checks failed by more than 33 percentage points.
 
 Unsupported operations were rare in test (`min`: 2; `surface_cylinder`: 2),
 so missing executor vocabulary cannot explain the roughly 40% disagreement.
-Read-only sample inspection found clear native annotation/program errors, for
-example programs that:
+Read-only inspection of the **target-subset** mismatches found a mixture.  Some
+are clear native annotation/program inconsistencies, for example programs that:
 
-- compute one forward population increase for a question asking for a
-  two-year backward population;
-- subtract train length and bridge length where the requested crossing time
-  requires adding them;
-- omit required compounding or return a decimal fraction for a percentage
-  option without the required conversion.
+- apply only part of a requested three-year compound population decrease
+  (executed 5,120 versus correct option 4,096);
+- produce 130 machines for a commission problem whose annotated option is 140;
+- produce 121 for a two-digit-number problem whose annotated option is 94.
 
-This agrees with the observed pattern: the executor can run almost every
-target, but many executed programs do not represent the question's correct
-calculation.
+Other target mismatches are near misses caused by the frozen 1% rule and
+answer rounding, such as 14.2857 versus option 14 or 16.6667 versus option 17.
+Therefore the 59.27% figure should be interpreted as agreement under the fixed
+Trax-aligned semantics and tolerance, **not** as proof that exactly 40.73% of
+MathQA target annotations are semantically wrong.
+
+The decision-relevant fact remains: the executor can run almost every target,
+but the raw native target does not provide a sufficiently clean gold-execution
+relation for the pre-registered intervention experiment.
 
 ## Decision and boundary
 
