@@ -17,6 +17,9 @@ FAMILY_ORDER = ("dag_add", "chain3_add", "chain3_copy", "chain1_copy")
 class ScreenCase:
     id: str
     family: str
+    labels: dict[str, str]
+    clean_p: int
+    corrupt_p: int
     clean_user: str
     corrupt_user: str
     clean_root: int
@@ -167,6 +170,9 @@ def generate_case(family: str, index: int, seed: int) -> ScreenCase:
             return ScreenCase(
                 id=case_id,
                 family=family,
+                labels=labels,
+                clean_p=p,
+                corrupt_p=corrupt_p,
                 clean_user=clean,
                 corrupt_user=corrupt,
                 clean_root=clean_root,
@@ -285,4 +291,3 @@ if __name__ == "__main__":
     parser.add_argument("--output", default="dependency_apparatus_screen_p1_report.json")
     parser.add_argument("--dry-run", action="store_true")
     main(parser.parse_args())
-

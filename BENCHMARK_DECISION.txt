@@ -118,3 +118,15 @@
 #   NEXT: disjoint apparatus-only screen of simpler topology-matched programs;
 #   select only by task accuracy/corruption sensitivity, then use a new seed for
 #   any P1 probe/causal test. Full result: EXPERIMENT_DEPENDENCY_PATCH_P0_731009.md.
+
+# DEPENDENCY APPARATUS-ONLY SCREEN (job 731104, commit 5050b69) — PASS AT
+#   ONE-HOP ONLY
+#   Fixed hardest-to-easiest families, n=96 each; no hidden states or patches.
+#   dag_add clean/corrupt-own=0.063/0.104 FAIL; chain3_add=0.167/0.094 FAIL;
+#   chain3_copy=0.990/0.458 FAIL; chain1_copy=1.000/0.667 PASS.
+#   Three-step identity succeeds when P==X but fails reliable print-route
+#   following after P differs from decoy X. Arithmetic is not the sole issue;
+#   dependency routing degrades with depth. Frozen selection is chain1_copy.
+#   P1 may test only the minimal one-hop dependency-role mechanism on new seed;
+#   any pass is not a hierarchy claim. Full result:
+#   EXPERIMENT_DEPENDENCY_APPARATUS_SCREEN_P1_731104.md.
