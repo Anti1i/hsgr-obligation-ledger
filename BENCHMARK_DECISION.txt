@@ -167,3 +167,22 @@
 #   route-subspace/multi-layer causal use with sham controls, or external Guide
 #   utility on a separately valid difficult task.
 #   Full result: EXPERIMENT_DEPENDENCY_ROUTE_SWAP_P2_731363.md.
+
+# VALUE-ORTHOGONAL ROUTE-SUBSPACE P3 (job 731461, commit 6ee55c8)
+#   — APPARATUS FAIL; WINDOW TREND IS DIAGNOSTIC ONLY
+#   New seed; 96 calibration / 192 held-out; P/X/corrupt values all distinct.
+#   All 288 tokenizer/control pairs pass. Route direction is orthogonal to an
+#   18-d digit-value basis and equal-norm +/- sham directions.
+#   Direction is extremely readable: held-out paired acc layer19=1.000,
+#   layer20=0.995, layer21=1.000; all fixed halves >=0.991.
+#   Base task fails frozen validity: route-on clean acc=0.760, route-off decoy
+#   acc=0.714 (both require >=0.90). Corrupt-own acc=0.776; hooks strongly work.
+#   Layer21 route edit vs sham is equivalent/small: clean -0.0176 nats/-1.04pp;
+#   decoy +0.0594 nats/+0.00pp. Window19-21 shows predicted but subthreshold
+#   two-sided movement: clean -0.0758 nats/-2.60pp; decoy +0.2779 nats/+1.82pp.
+#   No causal claim: strict gate misses and the apparatus failed.
+#   NEXT: one new-seed apparatus-only prompt screen, selecting solely by clean
+#   route-on/off accuracy, corrupt-own accuracy, and corruption sensitivity.
+#   If no prompt reaches both clean accuracies >=0.90, stop hidden causal work
+#   and move to external Guide utility. Full result:
+#   EXPERIMENT_DEPENDENCY_ROUTE_SUBSPACE_P3_731461.md.
