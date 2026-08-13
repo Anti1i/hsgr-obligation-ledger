@@ -12,6 +12,13 @@
 - Slurm: `COMPLETED`, exit 0, elapsed 00:01:37
 - Frozen verdict: **CAUSAL_PASS** at layer 21
 
+**Subsequent-control note:** P2 job 731363 held the donor token position fixed
+and found the route-on/off contrast practically equivalent.  P1's frozen
+within-experiment verdict remains recorded, but its causal dependency-role
+interpretation is superseded by
+`EXPERIMENT_DEPENDENCY_ROUTE_SWAP_P2_731363.md`; the large P1 effect cannot be
+used as clean hierarchy or HSGR-control evidence.
+
 This is the first experiment in this line for which the base task, held-out
 representation gate, patch apparatus, and dependency-specific causal gate all
 pass their frozen criteria.  Its claim boundary remains deliberately narrow:
@@ -108,4 +115,3 @@ labels, and surrounding checkpoint layout fixed, changing only an earlier
 can then be taken from the same physical checkpoint position in matched
 prompts.  Only if that contrast replicates should a separately frozen depth-1
 versus depth-2/3 progression be used to test a genuinely hierarchical claim.
-

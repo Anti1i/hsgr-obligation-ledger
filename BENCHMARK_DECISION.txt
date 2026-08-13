@@ -147,3 +147,23 @@
 #   while wrong-route donor is from another position. NEXT: freeze a same-position
 #   print-route swap control before any depth progression or HSGR Guide claim.
 #   Full result: EXPERIMENT_DEPENDENCY_PATCH_P1_731174.md.
+
+# SAME-POSITION DEPENDENCY ROUTE-SWAP P2 (job 731363, commit 021fea5)
+#   — POSITION CONFOUND SUPPORTED; REVISES P1 CAUSAL INTERPRETATION
+#   New seed; 96 calibration / 192 held-out; layer 21 locked before outcomes.
+#   All 288 route-on/off donor pairs matched token, digit, label, absolute token
+#   position, checkpoint context, and tokenized length; only one earlier print
+#   target token differed. Integrity and apparatus gates pass.
+#   Route state is strongly readable: held-out paired acc=0.953, AUROC=0.681,
+#   sign p=1.35e-43; halves=0.978/0.932; identical metadata=0.500.
+#   But same-position correct-route vs wrong-route patch is practically equal:
+#   logp delta=+0.0093, CI [+0.0022,+0.0195]; accuracy delta=+1.04pp,
+#   CI [0.00,+2.60]; both inside frozen equivalence bounds.
+#   Therefore P1's large different-position effect is not clean dependency-role
+#   causality and should not support hierarchy/HSGR control claims. The surviving
+#   fact is a one-hop representation-utilization separation: route information
+#   is readable but has negligible effect under this frozen single-site patch.
+#   Do not start depth progression. Any next test must explicitly target either
+#   route-subspace/multi-layer causal use with sham controls, or external Guide
+#   utility on a separately valid difficult task.
+#   Full result: EXPERIMENT_DEPENDENCY_ROUTE_SWAP_P2_731363.md.
