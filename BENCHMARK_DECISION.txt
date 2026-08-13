@@ -130,3 +130,20 @@
 #   P1 may test only the minimal one-hop dependency-role mechanism on new seed;
 #   any pass is not a hierarchy claim. Full result:
 #   EXPERIMENT_DEPENDENCY_APPARATUS_SCREEN_P1_731104.md.
+
+# ONE-HOP DEPENDENCY-ROLE ACTIVATION PATCHING P1 (job 731174, commit 67c04ac)
+#   — FROZEN CAUSAL PASS, NARROW CLAIM ONLY
+#   New seed; 96 calibration / 192 held-out chain1_copy cases; layers 7/14/21.
+#   Representation selected layer 21 on calibration. Held-out P-vs-X paired
+#   acc=0.714, AUROC=0.697, sign p=1.46e-9; fixed halves=0.693/0.736;
+#   metadata=0.510, so the frozen representation gate passes.
+#   Task is valid: clean acc=1.000, corrupt-own acc=0.734; corruption lowers
+#   clean-answer logp by 10.633 nats, CI [9.649, 11.628].
+#   At layer 21, correct-role vs equal-valued wrong-route patch:
+#   logp delta=+0.262 nats, CI [0.150, 0.396]; accuracy delta=+7.81pp;
+#   hash halves=+0.377/+0.134; recovery=99.84%. Frozen verdict CAUSAL_PASS.
+#   This supports a minimal one-hop dependency-role mechanism, not hierarchy.
+#   Remaining confound: correct donor is from the receiver's same token position,
+#   while wrong-route donor is from another position. NEXT: freeze a same-position
+#   print-route swap control before any depth progression or HSGR Guide claim.
+#   Full result: EXPERIMENT_DEPENDENCY_PATCH_P1_731174.md.
