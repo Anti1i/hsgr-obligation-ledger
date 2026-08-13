@@ -103,3 +103,18 @@
 # CURRENT BENCHMARK VERDICT: none of FinQA, MultiHiertt, MathQA, or HiTab passes
 #   both the structural and executable-gold requirements under a pre-registered
 #   native-data protocol. Stop hopping standard numerical-reasoning benchmarks.
+
+# DEPENDENCY-ROLE ACTIVATION PATCHING P0 (job 731009, commit cceab9f) —
+#   REPRESENTATION FAIL; TASK/APPARATUS FAIL
+#   Frozen controlled programs: 96 calibration / 192 held-out, Qwen2.5-7B,
+#   candidate residual layers 7/14/21. Selected layer=21.
+#   Held-out P-vs-matched-X: paired acc=0.552, AUROC=0.561, sign p=0.085;
+#   fixed halves=0.644/0.476; metadata=0.490; representation gate FAIL.
+#   Clean executable accuracy=0.099; corrupt-own accuracy=0.068, so the model
+#   did not perform the direct-answer base task. Corruption nevertheless lowered
+#   clean-answer logp by 0.262 nats, CI [0.089, 0.436]. Root-positive patches
+#   changed logp by +2.27 to +2.41 nats, confirming hook sensitivity, but did
+#   not rescue accuracy. No representation-utilization-gap claim is allowed.
+#   NEXT: disjoint apparatus-only screen of simpler topology-matched programs;
+#   select only by task accuracy/corruption sensitivity, then use a new seed for
+#   any P1 probe/causal test. Full result: EXPERIMENT_DEPENDENCY_PATCH_P0_731009.md.
