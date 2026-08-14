@@ -186,3 +186,20 @@
 #   If no prompt reaches both clean accuracies >=0.90, stop hidden causal work
 #   and move to external Guide utility. Full result:
 #   EXPERIMENT_DEPENDENCY_ROUTE_SUBSPACE_P3_731461.md.
+
+# LONG-FORM FIXED-SUPPORT AUDIT + CLAPNQ MARGINAL P1 (job 733055,
+#   commit 9ca14b5) — CANDIDATE DOMAIN PASS; HIDDEN-ADDED SIGNAL FAIL
+#   Zero-model CLAPnQ GOLD audit: 2254 valid examples; multi-support=98.98%,
+#   >=3 supports=48.18%, structural headroom=98.89%, pilot eligible=81.37%.
+#   P1 used 96 calibration + 96 held-out answerable dev cases with fixed gold
+#   passages. All model-relevance gates pass: median drop-all sensitivity
+#   +2.242 nats/token; active nodes=98.17%; >=2 active nodes/case=100%; distinct
+#   within-case marginals=98.96%. The math-style candidate collapse is absent.
+#   Hidden+surface block20 readout is correlated with marginal utility on heldout
+#   nodes (Spearman=0.506; fixed halves=0.470/0.532), but surface controls already
+#   reach 0.497. Spearman gain=+0.009 and RMSE reduction=0.56%, failing frozen
+#   +0.08 / 5% conditional-signal gates. Do not claim hidden Guide utility.
+#   NEXT: ASQA fixed/oracle support with explicit disambiguated QA facets; target
+#   uncovered-facet state from answer-prefix hidden states, with strict lexical/
+#   surface controls before any causal generation steering. Full result:
+#   EXPERIMENT_CLAPNQ_EVIDENCE_MARGINAL_P1_733055.md.
