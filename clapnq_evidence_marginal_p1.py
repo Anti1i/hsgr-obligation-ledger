@@ -174,6 +174,13 @@ class ModelRunner:
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
         torch.manual_seed(0)
+        # The NUS PyTorch/cuDNN installation requires the non-cuDNN SDPA path.
+        # This must be set in the model process; a separate Slurm smoke process
+        # does not carry backend state into this interpreter.
+        try:
+            torch.backends.cuda.enable_cudnn_sdp(False)
+        except Exception:
+            pass
         self.torch = torch
         self.tok = AutoTokenizer.from_pretrained(model_id, use_fast=True)
         if not self.tok.is_fast:
@@ -703,4 +710,3 @@ def parse_args() -> argparse.Namespace:
 if __name__ == "__main__":
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
     run(parse_args())
-
