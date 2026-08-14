@@ -1,0 +1,622 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="HSGR 在 ASQA fixed-support 长文本 benchmark 上的阶段性发现、实验边界与下一步决策。">
+  <title>HSGR × ASQA：新 Benchmark 阶段性发现</title>
+  <style>
+    :root {
+      --bg: #f3f6f8;
+      --paper: #ffffff;
+      --ink: #14252c;
+      --muted: #607078;
+      --line: #dce5e8;
+      --navy: #173f4b;
+      --teal: #087f78;
+      --teal-2: #0da89d;
+      --teal-soft: #e6f7f4;
+      --green: #237a57;
+      --green-soft: #e9f7ef;
+      --amber: #9a6700;
+      --amber-soft: #fff4d6;
+      --red: #ad3f4b;
+      --red-soft: #fff0f1;
+      --violet: #6653b7;
+      --violet-soft: #f0edff;
+      --shadow: 0 16px 40px rgba(21, 56, 65, .08);
+      --radius: 18px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 88% -8%, rgba(13, 168, 157, .14), transparent 33rem),
+        radial-gradient(circle at -10% 38%, rgba(102, 83, 183, .07), transparent 30rem),
+        var(--bg);
+      font: 15px/1.72 "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif;
+    }
+    a { color: var(--teal); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    strong { font-weight: 760; }
+    code {
+      padding: 2px 6px;
+      border-radius: 6px;
+      color: #314d55;
+      background: #edf3f4;
+      font: .91em/1.5 "Cascadia Code", Consolas, monospace;
+    }
+
+    #progress {
+      position: fixed;
+      inset: 0 auto auto 0;
+      z-index: 50;
+      width: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--teal), #5a70d4);
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 252px minmax(0, 1fr);
+      max-width: 1500px;
+      margin: 0 auto;
+    }
+    aside {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow: auto;
+      padding: 30px 18px;
+      border-right: 1px solid var(--line);
+      background: rgba(243, 246, 248, .88);
+      backdrop-filter: blur(14px);
+    }
+    .brand {
+      margin: 0 8px 20px;
+      color: var(--navy);
+      font-size: 14px;
+      font-weight: 820;
+      letter-spacing: .04em;
+    }
+    .brand small {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 550;
+      letter-spacing: 0;
+    }
+    nav a {
+      display: block;
+      margin: 3px 0;
+      padding: 8px 10px;
+      border-radius: 9px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+      transition: .16s ease;
+    }
+    nav a:hover, nav a.active {
+      color: var(--teal);
+      background: var(--teal-soft);
+      text-decoration: none;
+    }
+    .aside-note {
+      margin-top: 24px;
+      padding: 13px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      color: var(--muted);
+      background: rgba(255,255,255,.68);
+      font-size: 11px;
+      line-height: 1.6;
+    }
+    main { min-width: 0; }
+    .content { max-width: 1180px; margin: 0 auto; padding: 42px 42px 90px; }
+
+    .hero { padding: 48px 0 26px; }
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--teal);
+      font-size: 12px;
+      font-weight: 820;
+      letter-spacing: .11em;
+      text-transform: uppercase;
+    }
+    .eyebrow::before { content: ""; width: 30px; height: 2px; background: var(--teal); }
+    h1 {
+      max-width: 950px;
+      margin: 17px 0 14px;
+      font-size: clamp(40px, 5.3vw, 68px);
+      line-height: 1.04;
+      letter-spacing: -.052em;
+    }
+    h1 span {
+      display: block;
+      margin-top: 16px;
+      color: var(--teal);
+      font-size: .36em;
+      letter-spacing: -.015em;
+    }
+    .lede { max-width: 940px; margin: 17px 0 23px; color: #354a51; font-size: 19px; }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px; }
+    .pill, .badge {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 760;
+      line-height: 1;
+      white-space: nowrap;
+    }
+    .pill { padding: 8px 11px; border: 1px solid var(--line); color: var(--muted); background: rgba(255,255,255,.78); }
+    .pill strong { margin-right: 5px; color: var(--ink); }
+    .badge { padding: 6px 9px; }
+    .pass { color: var(--green); background: var(--green-soft); }
+    .fail { color: var(--red); background: var(--red-soft); }
+    .partial { color: var(--amber); background: var(--amber-soft); }
+    .open { color: var(--violet); background: var(--violet-soft); }
+    .neutral { color: #4e626a; background: #edf2f4; }
+
+    section { margin: 38px 0; scroll-margin-top: 22px; }
+    .section-head { display: flex; align-items: flex-start; gap: 13px; margin-bottom: 16px; }
+    .num {
+      display: grid;
+      place-items: center;
+      flex: 0 0 36px;
+      width: 36px;
+      height: 36px;
+      margin-top: 3px;
+      border-radius: 11px;
+      color: #fff;
+      background: var(--teal);
+      font-size: 13px;
+      font-weight: 820;
+    }
+    h2 { margin: 0; font-size: 30px; line-height: 1.25; letter-spacing: -.028em; }
+    h3 { margin: 21px 0 9px; font-size: 18px; line-height: 1.42; }
+    h4 { margin: 0 0 7px; font-size: 15px; }
+    p { margin: 8px 0 13px; }
+    .muted { color: var(--muted); }
+    .small { color: var(--muted); font-size: 12px; }
+
+    .card {
+      padding: 22px 23px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--paper);
+      box-shadow: var(--shadow);
+    }
+    .card + .card { margin-top: 14px; }
+    .grid-2, .grid-3, .grid-4 { display: grid; gap: 14px; }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 11px; }
+    .metric-card { padding: 17px; border: 1px solid var(--line); border-radius: 14px; background: #f7f9fa; }
+    .metric-card b { display: block; margin-bottom: 4px; color: var(--teal); font-size: 26px; line-height: 1.08; }
+    .metric-card span { color: var(--muted); font-size: 12px; }
+    .metric-card.red b { color: var(--red); }
+    .metric-card.amber b { color: var(--amber); }
+    .metric-card.violet b { color: var(--violet); }
+    .callout { margin: 15px 0; padding: 15px 17px; border-left: 4px solid var(--teal); border-radius: 0 14px 14px 0; background: var(--teal-soft); }
+    .callout.green { border-color: var(--green); background: var(--green-soft); }
+    .callout.amber { border-color: var(--amber); background: var(--amber-soft); }
+    .callout.red { border-color: var(--red); background: var(--red-soft); }
+    .callout.violet { border-color: var(--violet); background: var(--violet-soft); }
+    .quote { padding: 18px 20px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); color: #173f4b; font-size: 21px; font-weight: 780; line-height: 1.52; }
+
+    ul.clean { margin: 8px 0 0; padding: 0; list-style: none; }
+    ul.clean li { position: relative; margin: 8px 0; padding-left: 20px; }
+    ul.clean li::before { content: ""; position: absolute; left: 1px; top: .73em; width: 7px; height: 7px; border-radius: 50%; background: var(--teal); }
+    ul.clean.good li::before { background: var(--green); }
+    ul.clean.bad li::before { background: var(--red); }
+
+    .decision-grid { display: grid; grid-template-columns: 1.08fr .92fr; gap: 14px; }
+    .decision-title { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .verdict-list { display: grid; gap: 10px; margin-top: 15px; }
+    .verdict-row { display: grid; grid-template-columns: 100px 1fr; gap: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+    .verdict-row:first-child { padding-top: 0; border-top: 0; }
+    .verdict-row p { margin: 0; }
+
+    .pipeline { display: grid; grid-template-columns: 1fr 42px 1fr 42px 1fr; align-items: stretch; gap: 8px; }
+    .stage { padding: 18px; border: 1px solid var(--line); border-radius: 15px; background: #fff; }
+    .stage h3 { margin-top: 10px; }
+    .stage p { margin-bottom: 0; color: var(--muted); font-size: 13px; }
+    .arrow { display: grid; place-items: center; color: var(--teal); font-size: 24px; font-weight: 850; }
+
+    .bar-group { display: grid; gap: 13px; }
+    .bar-row { display: grid; grid-template-columns: 145px minmax(0, 1fr) 70px; gap: 12px; align-items: center; }
+    .bar-label { color: #344c54; font-size: 12px; }
+    .bar-track { height: 14px; overflow: hidden; border-radius: 999px; background: #e9eff1; }
+    .bar { height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--teal), var(--teal-2)); }
+    .bar.gray { background: #91a2a8; }
+    .bar.violet { background: linear-gradient(90deg, #6653b7, #8c7bd5); }
+    .bar.red { background: linear-gradient(90deg, #ad3f4b, #d86b76); }
+    .bar-value { color: var(--navy); font-size: 13px; font-weight: 780; text-align: right; }
+    .axis { display: flex; justify-content: space-between; margin: 3px 78px 0 157px; color: #8a999f; font-size: 10px; }
+
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); box-shadow: var(--shadow); }
+    table { width: 100%; min-width: 780px; border-collapse: collapse; }
+    th, td { padding: 11px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: #40545b; background: #f1f5f6; font-size: 11px; letter-spacing: .02em; white-space: nowrap; }
+    td { font-size: 12px; }
+    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr:hover { background: #fbfcfc; }
+    td.metric { color: #173f4b; font-weight: 760; white-space: nowrap; }
+
+    .oracle {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .oracle-item { position: relative; min-height: 168px; padding: 17px; border: 1px solid var(--line); border-radius: 15px; background: #f8fafb; }
+    .oracle-item.featured { color: #fff; border-color: var(--teal); background: linear-gradient(145deg, #0b8179, #155765); }
+    .oracle-item .value { margin: 13px 0 7px; color: var(--teal); font-size: 33px; font-weight: 850; line-height: 1; letter-spacing: -.03em; }
+    .oracle-item.featured .value, .oracle-item.featured p, .oracle-item.featured .small { color: #fff; }
+    .oracle-item p { margin: 5px 0; font-size: 12px; line-height: 1.55; }
+
+    .claim { display: grid; grid-template-columns: 130px 1fr; gap: 14px; align-items: start; }
+    .claim + .claim { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+    .claim p { margin: 0; }
+
+    .priority { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 14px; align-items: start; }
+    .priority + .priority { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+    .priority-mark { display: grid; place-items: center; height: 43px; border-radius: 12px; color: #fff; background: var(--teal); font-weight: 840; }
+    .priority h4 { margin-top: 0; }
+
+    details { border: 1px solid var(--line); border-radius: 13px; background: var(--paper); }
+    details + details { margin-top: 9px; }
+    summary { padding: 13px 15px; cursor: pointer; color: #314b53; font-weight: 750; }
+    details[open] summary { border-bottom: 1px solid var(--line); }
+    .detail-body { padding: 9px 16px 16px; }
+    .mono { overflow-wrap: anywhere; font-family: "Cascadia Code", Consolas, monospace; font-size: 11px; }
+    .footer { margin-top: 49px; padding-top: 22px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+
+    @media (max-width: 1050px) {
+      .layout { display: block; }
+      aside { position: relative; width: 100%; height: auto; padding: 16px 22px; border-right: 0; border-bottom: 1px solid var(--line); }
+      nav { display: flex; flex-wrap: wrap; gap: 3px; }
+      nav a { margin: 0; }
+      .aside-note { display: none; }
+      .content { padding: 28px 24px 65px; }
+    }
+    @media (max-width: 780px) {
+      .content { padding: 21px 15px 50px; }
+      .hero { padding-top: 28px; }
+      .grid-2, .grid-3, .grid-4, .decision-grid, .oracle { grid-template-columns: 1fr; }
+      .pipeline { grid-template-columns: 1fr; }
+      .pipeline .arrow { height: 24px; transform: rotate(90deg); }
+      .bar-row { grid-template-columns: 105px minmax(0, 1fr) 58px; gap: 8px; }
+      .axis { margin-left: 113px; margin-right: 66px; }
+      .claim { grid-template-columns: 1fr; gap: 6px; }
+      .verdict-row { grid-template-columns: 1fr; gap: 6px; }
+      h2 { font-size: 25px; }
+      .lede { font-size: 17px; }
+    }
+    @media print {
+      #progress, aside { display: none; }
+      .layout { display: block; }
+      body { background: #fff; }
+      .content { max-width: none; padding: 0; }
+      .card, .table-wrap { box-shadow: none; }
+      .stage, .metric-card, .oracle-item, details { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+<div id="progress"></div>
+<div class="layout">
+  <aside>
+    <div class="brand">HSGR × ASQA<small>新 benchmark 阶段性报告 · 2026-08-14</small></div>
+    <nav aria-label="页面目录">
+      <a href="#verdict">0. 一页结论</a>
+      <a href="#benchmark">1. 为什么换 ASQA</a>
+      <a href="#chain">2. 三阶段证据链</a>
+      <a href="#structure">3. 结构信号</a>
+      <a href="#hidden">4. Hidden-state 结果</a>
+      <a href="#oracle">5. Oracle 怎么看</a>
+      <a href="#claims">6. 能与不能声称什么</a>
+      <a href="#route">7. 对技术路线的影响</a>
+      <a href="#next">8. 下一步验证</a>
+      <a href="#repro">9. 可复现信息</a>
+    </nav>
+    <div class="aside-note">建议先阅读“一页结论”和“Oracle 怎么看”。本报告只汇总 ASQA fixed-support 新路线，不重复此前数学 benchmark 的全部失败实验。</div>
+  </aside>
+
+  <main><div class="content">
+    <header class="hero">
+      <div class="eyebrow">Evidence-first benchmark report</div>
+      <h1>HSGR × ASQA<span>从“候选值坍缩”转向“长答案候选节点”后的第一轮证据</span></h1>
+      <p class="lede">ASQA 解决了旧数学任务中“候选值几乎都相同”的基本盘问题：一个问题天然包含多个语义不同的答案 facet。实验进一步证明，<strong>给出正确 facet 节点会显著提高完整回答率</strong>；但目前的 answer-prefix hidden state <strong>不能可靠判断哪个未覆盖节点最终会漏掉</strong>。因此，benchmark 和静态结构方向可保留，当前 hidden Guide 目标必须停止。</p>
+      <div class="meta">
+        <span class="pill"><strong>数据</strong>ASQA dev + ALCE oracle top-5 passages</span>
+        <span class="pill"><strong>模型</strong>Qwen2.5-7B-Instruct</span>
+        <span class="pill"><strong>主样本</strong>192 个 clean / support-complete 问题</span>
+        <span class="pill"><strong>状态</strong>结构通过 · 当前 hidden 机制失败</span>
+      </div>
+    </header>
+
+    <section id="verdict">
+      <div class="section-head"><div class="num">0</div><div><h2>一页结论</h2><p class="muted">项目可以继续，但不能沿着刚刚失败的 hidden target 直接往下做。</p></div></div>
+      <div class="decision-grid">
+        <div class="card">
+          <div class="decision-title"><h3 style="margin:0">总判断</h3><span class="badge partial">部分成立</span></div>
+          <div class="quote" style="margin-top:14px">新的 candidate-node 基本盘成立；当前 answer-prefix hidden Guide 不成立。</div>
+          <div class="verdict-list">
+            <div class="verdict-row"><span class="badge pass">可以保留</span><p>ASQA clean subset、固定证据、2–6 个语义 facet 节点、严格全节点覆盖指标。</p></div>
+            <div class="verdict-row"><span class="badge pass">已有正证据</span><p>正确 facet checklist 相比等长 decoy，STR-HIT 提升 <strong>12.50 个百分点</strong>，且配对检验显著。</p></div>
+            <div class="verdict-row"><span class="badge fail">必须停止</span><p>用当前回答前缀 hidden state 预测“哪个未覆盖节点最终仍会遗漏”，以及基于该读出继续做 activation steering。</p></div>
+            <div class="verdict-row"><span class="badge open">仍待验证</span><p>单个节点是否具有差异化的因果修复价值，以及是否存在不依赖 prompt action routing 的 latent Guide 机制。</p></div>
+          </div>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">最重要的四个数字</h3>
+          <div class="grid-2">
+            <div class="metric-card"><b>43.75%</b><span>固定证据直接回答<br>严格全 facet 正确率</span></div>
+            <div class="metric-card"><b>57.81%</b><span>显示全部真实 facet 节点<br>严格全 facet 正确率</span></div>
+            <div class="metric-card violet"><b>63.02%</b><span>事后在 direct / all-node<br>二选一的严格 Oracle</span></div>
+            <div class="metric-card red"><b>0.582</b><span>full hidden reader AUROC<br>低于 surface-only 0.653</span></div>
+          </div>
+          <div class="callout amber"><strong>注意：</strong>57.81% 是 gold textual scaffold 的效果；63.02% 是看过结果后的二选一上限。两者都不是最终 HSGR 的可部署准确率。</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="benchmark">
+      <div class="section-head"><div class="num">1</div><div><h2>为什么 ASQA 比旧数学设定更合适</h2><p class="muted">这里的“节点”是答案需要覆盖的语义方面，不是重复采样得到的数值。</p></div></div>
+      <div class="card">
+        <div class="grid-3">
+          <div><span class="badge neutral">旧设定</span><h3>数学候选值</h3><p>同一中间节点反复采样后，经归一化常落到同一个数值。候选域缺少变化，Guide 没有什么可选。</p></div>
+          <div><span class="badge pass">新设定</span><h3>ASQA 候选节点</h3><p>一个模糊问题含 2–6 个 disambiguated facets，例如不同人物、年代或条件下的答案。节点之间保持语义身份。</p></div>
+          <div><span class="badge neutral">固定约束</span><h3>Fixed support</h3><p>所有方法使用同一组 ALCE oracle top-5 passages，不允许重新检索、重排或根据结果修补证据。</p></div>
+        </div>
+        <div class="callout"><strong>核心变化：</strong>我们没有把 candidate domain 改成完整路径，也没有做 Tree-of-Thought。候选单位从“节点里的多个值”改成“长答案必须覆盖的多个语义节点”。</div>
+      </div>
+      <div class="grid-4" style="margin-top:14px">
+        <div class="metric-card"><b>948</b><span>ASQA dev 对齐样本</span></div>
+        <div class="metric-card"><b>427</b><span>clean + support-complete 可用样本</span></div>
+        <div class="metric-card"><b>2–6</b><span>每题候选 facet 节点</span></div>
+        <div class="metric-card"><b>521</b><span>固定上下文中位词数</span></div>
+      </div>
+    </section>
+
+    <section id="chain">
+      <div class="section-head"><div class="num">2</div><div><h2>三阶段证据链</h2><p class="muted">每一步只在前一步提供足够依据后推进，并使用预先冻结的 gate。</p></div></div>
+      <div class="pipeline">
+        <div class="stage">
+          <span class="badge partial">P0 · BORDERLINE</span>
+          <h3>结构与证据审计</h3>
+          <p>确认 facet 数量不坍缩、固定证据充足；同时发现完整 dev 中 22.47% 的题有重复答案组，因此 value-only 表示不安全。</p>
+        </div>
+        <div class="arrow">→</div>
+        <div class="stage">
+          <span class="badge pass">P1x · PASS</span>
+          <h3>静态节点效用</h3>
+          <p>在 clean subset 上，真实 facet checklist 显著优于 decoy 和 direct，证明帮助来自节点语义，而非提示长度或格式。</p>
+        </div>
+        <div class="arrow">→</div>
+        <div class="stage">
+          <span class="badge fail">P2x · FAIL</span>
+          <h3>Hidden Guide 读出</h3>
+          <p>当前前缀 hidden state 不能预测哪个未覆盖 facet 会最终漏掉；apparatus 也缺少足够多的可选择混合状态。</p>
+        </div>
+      </div>
+      <div class="callout green"><strong>这条证据链不是矛盾：</strong>P1x 回答“把结构提前告诉模型是否有用”；P2x 回答“生成到一半时，hidden state 能否选择具体遗漏节点”。前者成立不自动推出后者成立。</div>
+    </section>
+
+    <section id="structure">
+      <div class="section-head"><div class="num">3</div><div><h2>结构信号：真实节点确实有用</h2><p class="muted">P1x 使用同一模型、同一证据、greedy decoding 和相同输出上限，只改变是否提供正确 facet 节点。</p></div></div>
+      <div class="grid-2">
+        <div class="card">
+          <h3 style="margin-top:0">严格全 facet 正确率（STR-HIT）</h3>
+          <div class="bar-group">
+            <div class="bar-row"><div class="bar-label">Closed book</div><div class="bar-track"><div class="bar gray" style="width:11.98%"></div></div><div class="bar-value">11.98%</div></div>
+            <div class="bar-row"><div class="bar-label">Fixed direct</div><div class="bar-track"><div class="bar gray" style="width:43.75%"></div></div><div class="bar-value">43.75%</div></div>
+            <div class="bar-row"><div class="bar-label">Matched decoy nodes</div><div class="bar-track"><div class="bar violet" style="width:45.31%"></div></div><div class="bar-value">45.31%</div></div>
+            <div class="bar-row"><div class="bar-label">True facet nodes</div><div class="bar-track"><div class="bar" style="width:57.81%"></div></div><div class="bar-value">57.81%</div></div>
+          </div>
+          <div class="axis"><span>0%</span><span>50%</span><span>100%</span></div>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">排除了哪些简单解释</h3>
+          <ul class="clean good">
+            <li><strong>不是仅靠证据：</strong>true nodes 比同样拥有 fixed passages 的 direct 高 14.06 个点 STR-HIT。</li>
+            <li><strong>不是 checklist 形式：</strong>等数量、近似长度的 decoy 只比 direct 高 1.56 个点。</li>
+            <li><strong>不是偶然波动：</strong>true vs decoy 有 34 个 true-only 成功、10 个 decoy-only 成功，McNemar <code>p=0.000388</code>。</li>
+            <li><strong>不是输出更长：</strong>各 arm 中位长度约 100–110 词，差距不足以解释结构增益。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="table-wrap" style="margin-top:14px">
+        <table>
+          <thead><tr><th>实验臂</th><th>平均 facet 覆盖率 STR-EM</th><th>严格全覆盖 STR-HIT</th><th>中位输出词数</th><th>解释</th></tr></thead>
+          <tbody>
+            <tr><td>Closed book</td><td class="metric">30.86%</td><td class="metric">11.98%</td><td>114.0</td><td>模型参数知识不足以完成任务。</td></tr>
+            <tr><td>Fixed direct</td><td class="metric">70.76%</td><td class="metric">43.75%</td><td>100.5</td><td>固定证据很有用，但仍有较大完整性空间。</td></tr>
+            <tr><td>Matched decoy nodes</td><td class="metric">70.78%</td><td class="metric">45.31%</td><td>99.5</td><td>一般 checklist 效应很小。</td></tr>
+            <tr><td><strong>True facet nodes</strong></td><td class="metric"><strong>78.96%</strong></td><td class="metric"><strong>57.81%</strong></td><td>109.5</td><td>正确节点语义带来可复现增益。</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout amber"><strong>范围限制：</strong>该结果只证明“一根 root 下多个答案 facet”的组合结构有效，不能外推为任意深度的层级推理，也没有证明每个节点内部存在多个有意义的候选值。</div>
+    </section>
+
+    <section id="hidden">
+      <div class="section-head"><div class="num">4</div><div><h2>Hidden-state 结果：信号没有形成可用的节点选择器</h2><p class="muted">P2x 的目标是：在回答的 25% / 50% / 75% 前缀处，从尚未覆盖的节点中预测哪些到结尾仍会遗漏。</p></div></div>
+      <div class="grid-2">
+        <div class="card">
+          <h3 style="margin-top:0">Held-out 读出表现</h3>
+          <div class="bar-group">
+            <div class="bar-row"><div class="bar-label">Surface only</div><div class="bar-track"><div class="bar gray" style="width:65.3%"></div></div><div class="bar-value">0.653</div></div>
+            <div class="bar-row"><div class="bar-label">Node hidden only</div><div class="bar-track"><div class="bar violet" style="width:64.9%"></div></div><div class="bar-value">0.649</div></div>
+            <div class="bar-row"><div class="bar-label">Prefix hidden only</div><div class="bar-track"><div class="bar red" style="width:57.2%"></div></div><div class="bar-value">0.572</div></div>
+            <div class="bar-row"><div class="bar-label">Full hidden reader</div><div class="bar-track"><div class="bar red" style="width:58.2%"></div></div><div class="bar-value">0.582</div></div>
+          </div>
+          <div class="axis"><span>0.0</span><span>0.5</span><span>1.0 AUROC</span></div>
+          <div class="callout red"><strong>关键失败：</strong>full hidden 比 surface-only 低 0.071 AUROC；Recall@1 只提高 0.048，低于预设的 +0.10 gate。</div>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">为什么会失败</h3>
+          <ul class="clean bad">
+            <li><strong>可决策状态太少：</strong>held-out 只有 42 个 mixed states 同时含“以后会补上”和“最终仍遗漏”的节点，低于最低 60。</li>
+            <li><strong>目标偏斜：</strong>保留节点中 66.86% 最终仍遗漏，高于冻结上限 60%。</li>
+            <li><strong>前缀交互弱：</strong>node-only 与 surface control 接近，而加入 prefix hidden 后反而变差。</li>
+            <li><strong>稳定性不够：</strong>full reader 在两个固定 halves 的 AUROC 都输给 surface；Recall 也只在一半中提高。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <div class="claim"><span class="badge partial">更准确的解释</span><p>hidden/node 表征中可能包含“这个 facet 本身难不难”的信息，但没有证据表明它编码了足够强的<strong>当前回答状态 × 具体节点</strong>交互，从而提前判断自然续写会漏掉谁。</p></div>
+        <div class="claim"><span class="badge fail">不能这样解释</span><p>不能因为 wrong-node control 的 Recall@1 有下降，就宣称 hidden Guide 已有效。它的 AUROC 仅下降 0.023，并且绝对表现、surface 增益、两半稳定性和 apparatus gates 均失败。</p></div>
+        <div class="claim"><span class="badge neutral">停止规则</span><p>按冻结协议，本目标失败后不运行 causal activation steering。继续调层、调阈值或只挑 75% prefix 都属于基于结果追调，不能作为可靠证据。</p></div>
+      </div>
+    </section>
+
+    <section id="oracle">
+      <div class="section-head"><div class="num">5</div><div><h2>Oracle 正确率应该怎么看</h2><p class="muted">这里的“正确”是 STR-HIT：长答案覆盖该题的全部 facet；不是普通单答案准确率。</p></div></div>
+      <div class="card">
+        <div class="oracle">
+          <div class="oracle-item"><span class="badge neutral">基线</span><div class="value">43.75%</div><h4>Fixed direct</h4><p>有固定证据，但不给 facet 结构。</p></div>
+          <div class="oracle-item"><span class="badge pass">Gold scaffold</span><div class="value">57.81%</div><h4>All true nodes</h4><p>一次性展示所有 gold facet 问题，不提供短答案。</p></div>
+          <div class="oracle-item featured"><span class="badge" style="color:#0b615d;background:#dff7f3">核心上限</span><div class="value">63.02%</div><h4>KEEP-or-all-node Oracle</h4><p>事后为每题在 direct 与 all-node 两个结果中选成功者。</p></div>
+          <div class="oracle-item"><span class="badge open">仅诊断</span><div class="value">65.63%</div><h4>Any-four-arm Oracle</h4><p>事后从 closed/direct/true/decoy 四臂选结果，不是有效方法上限。</p></div>
+        </div>
+        <div class="grid-2" style="margin-top:14px">
+          <div class="callout green"><strong>正面含义：</strong>all-node scaffold 修复了 37 个 direct 失败样本；direct / all-node 组合上限比 direct 高 19.27 个百分点，说明结构干预存在真实空间。</div>
+          <div class="callout amber"><strong>负面含义：</strong>all-node 同时破坏了 10 个 direct 成功样本。全量加节点不是单调有益，因此需要“何时、用哪个节点”的更细机制。</div>
+        </div>
+      </div>
+      <div class="callout violet"><strong>尚未得到真正的 per-node Oracle：</strong>P1x 一次展示全部节点，没有分别注入每个 facet。因此我们还不知道单节点干预能否超过 all-node scaffold、不同题的最佳节点是否足够多样、以及 selector 是否有实际发挥空间。</div>
+    </section>
+
+    <section id="claims">
+      <div class="section-head"><div class="num">6</div><div><h2>现在能与不能声称什么</h2><p class="muted">对 proposal 最重要的是把 benchmark property、oracle apparatus 与最终方法贡献分开。</p></div></div>
+      <div class="card">
+        <div class="claim"><span class="badge pass">已支持</span><p><strong>ASQA clean subset 提供非坍缩 candidate-node domain。</strong>节点是语义不同的 facets；正确节点身份对长答案完整性有显著、配对的因果影响。</p></div>
+        <div class="claim"><span class="badge partial">部分支持</span><p><strong>HSGR 可以在这个 benchmark 上继续探索。</strong>成立的只是“结构有用”的必要条件；hidden selector 和因果 Guide 尚未成立。</p></div>
+        <div class="claim"><span class="badge fail">不支持</span><p><strong>当前 answer-prefix hidden state 能识别最终遗漏节点。</strong>full reader 不但未过 gate，还落后于 surface-only。</p></div>
+        <div class="claim"><span class="badge fail">不支持</span><p><strong>57.81% 或 63.02% 是 HSGR 当前准确率。</strong>前者依赖 gold nodes，后者还依赖事后选结果；只能报告为 oracle ceiling / actionability diagnostic。</p></div>
+        <div class="claim"><span class="badge open">尚未验证</span><p><strong>单个节点具有可选择、互补的因果效用。</strong>需要 fresh single-node intervention 实验后才能决定是否值得设计新的 latent selector。</p></div>
+      </div>
+    </section>
+
+    <section id="route">
+      <div class="section-head"><div class="num">7</div><div><h2>对 HSGR 技术路线的影响</h2><p class="muted">保留最强证据，同时严格避开 current methods 的重合。</p></div></div>
+      <div class="grid-2">
+        <div class="card">
+          <span class="badge pass">保留的骨架</span>
+          <h3>Candidate-node composition</h3>
+          <ul class="clean good">
+            <li>固定 passages，不把 retrieval / reranking 当贡献。</li>
+            <li>候选域是短语义节点，不是完整路径或 partial trajectory。</li>
+            <li>目标是长答案的多 facet coverage，不再制造错误数值来增加候选多样性。</li>
+            <li>Guide 最终必须体现 node-specific latent conditioning，而不是只在 prompt 中追加一句话。</li>
+          </ul>
+        </div>
+        <div class="card">
+          <span class="badge fail">排除的实现</span>
+          <h3>不能作为论文主方法</h3>
+          <ul class="clean bad">
+            <li>继续优化已失败的 future-omission prefix classifier。</li>
+            <li>把 gold facet question 的 prompt routing 包装成 hidden Guide。</li>
+            <li>枚举完整回答路径、树搜索或 ToT/DPTS 式 trajectory selection。</li>
+            <li>把 gold labels、short-answer aliases 或最终答案泄漏到特征中。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout"><strong>论文边界：</strong>文本节点注入可以继续用作 oracle apparatus，帮助判断“有没有可修复空间”；但最终贡献必须在不展示 gold node 文本的前提下，由 hidden/latent mechanism 产生可归因的覆盖增益，并与 surface、wrong-node、random-node、text-only 等控制比较。</div>
+    </section>
+
+    <section id="next">
+      <div class="section-head"><div class="num">8</div><div><h2>下一步最有信息量的验证</h2><p class="muted">不是马上训练另一个 hidden probe，而是先确认单节点选择问题本身是否值得解决。</p></div></div>
+      <div class="card">
+        <div class="priority">
+          <div class="priority-mark">P0</div>
+          <div><h4>Fresh single-node intervention Oracle</h4><p>在 427 个 clean cases 中使用未进入当前 192 样本的 fresh subset。对每个 facet 单独做一次文本干预，同时保留 direct 与 all-node。提前冻结样本、prompt、解码和 gates。</p></div>
+        </div>
+        <div class="priority">
+          <div class="priority-mark">P1</div>
+          <div><h4>判断 selector 是否有必要</h4><p>比较 direct、all-node、随机单节点、最佳固定位置、KEEP-or-single-node Oracle。重点看：单节点 Oracle 是否明显超过 all-node/KEEP，以及最佳节点是否在题目间足够多样，而不是总由同一位置支配。</p></div>
+        </div>
+        <div class="priority">
+          <div class="priority-mark">P2</div>
+          <div><h4>Oracle 通过后，重新定义 hidden target</h4><p>标签应来自“注入该节点带来的边际覆盖收益”，而不是“自然续写最终会不会遗漏”。这会直接对齐 Guide 的因果价值；但 prompt intervention 仍只用于构造/审计标签，不是最终方法。</p></div>
+        </div>
+        <div class="priority">
+          <div class="priority-mark">STOP</div>
+          <div><h4>明确停止条件</h4><p>如果 single-node Oracle 不超过 all-node/KEEP，或最佳节点几乎不具多样性，就停止 node selection 主线：结构有用，但无需可学习 selector。不要再靠换层、换阈值或筛子集挽救。</p></div>
+        </div>
+      </div>
+      <div class="callout amber"><strong>客观风险：</strong>即使 single-node Oracle 通过，如何在没有 gold disambiguated questions 的真实推理场景中构造候选节点仍是单独难题。当前 ASQA 只能先证明机制，不能直接证明部署可行性。</div>
+    </section>
+
+    <section id="repro">
+      <div class="section-head"><div class="num">9</div><div><h2>实验设定与可复现信息</h2><p class="muted">详细协议与原始指标均已固化在仓库报告中。</p></div></div>
+      <details open>
+        <summary>P0 · Fixed-support structure audit</summary>
+        <div class="detail-body">
+          <p><strong>结果：</strong><code>BORDERLINE</code>；Slurm job <code>733199</code>，节点 <code>xcnc17</code>，CPU，5 秒，exit 0。</p>
+          <p><strong>关键观测：</strong>948/948 对齐；98.63% 有至少 2 个 unique facets；22.47% 含 duplicate answer groups；passage STR-EM / STR-HIT 为 78.55% / 59.70%；最终得到 427 个 clean/support-complete cases。</p>
+          <p class="mono">ASQA SHA-256: 8de0c824824372243b73b10314727dac1a02d9ecc729c34c752c30f8a3c1e58a<br>ALCE top-5 SHA-256: aaab90bee9b0d3e53050326b4c4d05077a929046996ce4a9cfe9bab1dc9ee75a<br>Code commit: 71f0ad0</p>
+        </div>
+      </details>
+      <details>
+        <summary>P1x · Clean fixed-support candidate-node screen</summary>
+        <div class="detail-body">
+          <p><strong>结果：</strong><code>HEADROOM_AND_STRUCTURE_PASS</code>；Slurm job <code>733287</code>，节点 <code>xgpi14</code>，H100 NVL MIG 3g.47gb，8 分 53 秒，exit 0。</p>
+          <p><strong>模型：</strong><code>Qwen/Qwen2.5-7B-Instruct</code>，bfloat16，greedy decoding，最多 192 new tokens。样本为 427 个 clean cases 中按冻结哈希选出的 192 个。</p>
+          <p class="mono">Report SHA-256: d584ed2aa8e0ff13312c02e8681dac0c9206cade10a862d0a05de9cbfbfd4912<br>Generations SHA-256: 4f39958c99b86987c49008b3abf22c0367274502950b45dabf66cf6ab50f1f28<br>Protocol commit: 892a7b4</p>
+        </div>
+      </details>
+      <details>
+        <summary>P2x · Candidate-node hidden Guide readout</summary>
+        <div class="detail-body">
+          <p><strong>结果：</strong><code>APPARATUS_FAIL</code>，全部 hidden predictive gates 同时失败；Slurm job <code>733309</code>，节点 <code>xgpi14</code>，H100 NVL MIG 3g.47gb，2 分 01 秒，exit 0。</p>
+          <p><strong>设定：</strong>96 calibration / 96 untouched held-out；模型 blocks 13/20/27；25%/50%/75% 回答前缀；surface、prefix-only、node-only、full、wrong-node 五组读出。</p>
+          <p class="mono">Report SHA-256: d248f5f07f046d1f212946053f8ca4368cfb367b7da35c96c7b94b27049555ae<br>Score rows SHA-256: cf19a6766801785a9bc1b0e2d11f9042a76190b0d8a8579ef6e79cfdd55b5733<br>Code commit: 40670d9</p>
+        </div>
+      </details>
+      <details>
+        <summary>指标与术语</summary>
+        <div class="detail-body">
+          <p><strong>Facet：</strong>ASQA 发布的一个 disambiguated QA pair。<strong>STR-EM：</strong>每题已覆盖 facet 比例的平均值。<strong>STR-HIT：</strong>全部 facet 均出现在长答案中的题目比例。</p>
+          <p>Facet alias 使用 ALCE normalization：小写、去 ASCII 标点和冠词 <code>a/an/the</code>、归一化空格，再做 alias substring matching。短答案只用于评分与标签，从未出现在 P1x true-facet prompt 的 checklist 答案中，也未进入 P2x 的模型特征。</p>
+        </div>
+      </details>
+    </section>
+
+    <footer class="footer">
+      <strong>报告口径：</strong>截至 2026-08-14 已完成并冻结的 ASQA P0 / P1x / P2x 结果。结论按“已验证事实—合理解释—开放问题”分层；任何 Oracle 数字都不等同于可部署 HSGR 效果。<br>
+      Source reports: <code>EXPERIMENT_ASQA_FIXED_SUPPORT_P0_733199.md</code> · <code>EXPERIMENT_ASQA_CLEAN_FIXED_SUPPORT_P1X_733287.md</code> · <code>EXPERIMENT_ASQA_CANDIDATE_NODE_HIDDEN_P2X_733309.md</code>
+    </footer>
+  </div></main>
+</div>
+
+<script>
+  const links = [...document.querySelectorAll('nav a')];
+  const sections = links.map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+  const progress = document.getElementById('progress');
+
+  function updatePage() {
+    const root = document.documentElement;
+    const max = root.scrollHeight - root.clientHeight;
+    progress.style.width = (max > 0 ? (root.scrollTop / max) * 100 : 0) + '%';
+
+    let active = sections[0];
+    for (const section of sections) {
+      if (section.getBoundingClientRect().top <= 150) active = section;
+    }
+    links.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + active.id));
+  }
+  addEventListener('scroll', updatePage, { passive: true });
+  addEventListener('resize', updatePage);
+  updatePage();
+</script>
+</body>
+</html>
