@@ -46,6 +46,13 @@ def parse_obligations_repaired(text: str) -> tuple[list[str] | None, str]:
     if parsed is not None:
         return parsed, mode
     stripped = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip(), flags=re.IGNORECASE)
+    if "\\'" in stripped:
+        try:
+            apostrophe_repaired = valid_obligation_set(json.loads(stripped.replace("\\'", "'")))
+            if apostrophe_repaired is not None:
+                return apostrophe_repaired, "json_apostrophe_repair"
+        except json.JSONDecodeError:
+            pass
     values = []
     for line in [line.strip() for line in stripped.splitlines() if line.strip()]:
         try:
@@ -219,6 +226,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "repair_cases": len(repairs),
             "originally_valid_sets": len(originally_valid),
             "recovered_multi_array_sets": sum(mode == "multi_array" for mode in parse_modes.values()),
+            "recovered_apostrophe_escape_sets": sum(mode == "json_apostrophe_repair" for mode in parse_modes.values()),
             "reused_candidates": len(reused_candidates),
             "new_candidates": len(new_candidates),
             "total_candidates": len(all_candidates),

@@ -16,6 +16,12 @@ class AutoObligationP7RTests(unittest.TestCase):
         self.assertEqual(mode, "json")
         self.assertEqual(len(parsed), 4)
 
+    def test_repairs_invalid_apostrophe_escape(self):
+        raw = r'["Who loves Helena?", "Does Demetrius love Helena?", "What changes Demetrius\' feelings?", "Does Lysander love Helena?"]'
+        parsed, mode = parse_obligations_repaired(raw)
+        self.assertEqual(mode, "json_apostrophe_repair")
+        self.assertEqual(len(parsed), 4)
+
     def test_rejects_non_four_lines(self):
         parsed, mode = parse_obligations_repaired('["A?"]\n["B?"]')
         self.assertIsNone(parsed)

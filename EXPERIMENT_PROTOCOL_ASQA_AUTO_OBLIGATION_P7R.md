@@ -5,18 +5,22 @@ case-level diagnostic, before any P7r coverage score or append was generated.
 
 ## Motivation and permitted repair
 
-P7x marked 18/73 induction outputs invalid. Inspection showed that these were
-not missing node sets: the model emitted four lines, each a valid one-element
-JSON array. The frozen P7x parser accepted one four-element JSON array or a
-numbered list, so it replaced all 18 semantically complete sets with the
-original question. P7r repairs only this serialization mismatch.
+P7x marked 18/73 induction outputs invalid. Complete inspection showed that
+none were missing node sets: 17 outputs used four lines, each a valid
+one-element JSON array, while one four-element array used the non-JSON `\'`
+escape inside English possessives. The frozen P7x parser accepted one valid
+four-element JSON array or a numbered list, so it replaced all 18 semantically
+complete sets with the original question. P7r repairs only these two exhausted
+serialization mismatches.
 
 ## Frozen replay
 
 - Reuse every raw P7x induction output. Do not regenerate induction text.
-- Keep the original P7x parser first. For a P7x-invalid output only, accept
-  exactly four nonempty lines when every line is a JSON array containing one
-  string and the four cleaned strings are unique and at most 35 words.
+- Keep the original P7x parser first. For a P7x-invalid output only, first
+  normalize `\'` to a literal apostrophe and accept it only if this yields one
+  valid four-element array; otherwise accept exactly four nonempty lines when
+  every line is a JSON array containing one string. In both cases the four
+  cleaned strings must be unique and at most 35 words.
 - Reuse the 220 frozen candidate coverage scores and appends from the 55
   originally valid cases exactly.
 - For the recovered 18 cases only, score the 72 recovered obligations with the
