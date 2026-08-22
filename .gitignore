@@ -16,11 +16,10 @@ jingbo
 # run artifacts
 logs/
 results/
+data/
+outputs/
+outputs_*/
 *.out
-data/gsm_oracle*.jsonl
-data/gsm8k_socratic*.jsonl
-data/musique*.jsonl
-data/longform_cache/
 e0_*/
 dd_*/
 mh_screen_*.json

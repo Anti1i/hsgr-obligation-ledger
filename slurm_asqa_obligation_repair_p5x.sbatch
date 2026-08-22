@@ -8,7 +8,7 @@
 #SBATCH --output=/mnt/scratch/z/%u/dch-hsgr/logs/%x-%j.out
 
 set -uo pipefail
-REPO="$HOME/dch-hsgr"
+REPO="${HSGR_REPO:-$HOME/hsgr-obligation-ledger}"
 SCR="/mnt/scratch/z/${USER}/dch-hsgr"
 WORK="$SCR/work-${SLURM_JOB_NAME}-${SLURM_JOB_ID}"
 PY="$SCR/venv/bin/python"
