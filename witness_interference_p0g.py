@@ -230,7 +230,10 @@ def judge_prompt(case: ControlledCase, answer: str) -> str:
         "is satisfied. witness_sentences must list the one-based answer sentence IDs that directly "
         "support a true item, and must be empty for a false item. Return exactly one JSON object "
         "with field items, a list of four objects with fields id, met, witness_sentences. Preserve "
-        "the requirement order below. Return no markdown or explanation.\n\n"
+        "the requirement order below. For O_ATTRIBUTION, inspect the citation visibly attached to "
+        "the primary result in the ANSWER. If the answer attaches [B], the item is false even when "
+        "the fixed evidence reveals that [A] is the correct source; never silently repair the "
+        "answer's citation from the evidence. Return no markdown or explanation.\n\n"
         f"Question: {case.question}\n\nFixed evidence:\n{case.evidence}\n\n"
         f"Answer sentences:\n{numbered(answer)}\n\nRequirements:\n{requirements}\n\nJSON:"
     )
@@ -317,47 +320,62 @@ def overlap_summary(rows: list[dict[str, Any]]) -> tuple[dict[str, Any], float]:
 def run(args: argparse.Namespace) -> dict[str, Any]:
     cases = build_cases()
     case_by_id = {case.id: case for case in cases}
-    generation_keys: list[tuple[str, str]] = []
-    prompts: list[str] = []
-    for case in cases:
-        for arm in ARMS:
-            generation_keys.append((case.id, arm))
-            prompts.append(repair_prompt(case, arm))
+    if args.reuse_candidates:
+        candidates = [
+            json.loads(line)
+            for line in args.reuse_candidates.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        expected_keys = {(case.id, arm) for case in cases for arm in ARMS}
+        actual_keys = {(row["id"], row["arm"]) for row in candidates}
+        if len(candidates) != len(expected_keys) or actual_keys != expected_keys:
+            raise RuntimeError("reused candidates do not match the frozen 24 x 4 design")
+        for row in candidates:
+            case = case_by_id[row["id"]]
+            if row["baseline_answer"] != case.baseline_answer or row["target_id"] != case.target_id:
+                raise RuntimeError(f"reused candidate integrity failure: {row['id']}/{row['arm']}")
+    else:
+        generation_keys: list[tuple[str, str]] = []
+        prompts: list[str] = []
+        for case in cases:
+            for arm in ARMS:
+                generation_keys.append((case.id, arm))
+                prompts.append(repair_prompt(case, arm))
 
-    generator = ModelRunner(args.generator_model)
-    raw_outputs = generator.generate(prompts, args.generation_batch_size, args.generation_cap)
-    release_runner(generator)
+        generator = ModelRunner(args.generator_model)
+        raw_outputs = generator.generate(prompts, args.generation_batch_size, args.generation_cap)
+        release_runner(generator)
 
-    candidates: list[dict[str, Any]] = []
-    for (case_id, arm), raw in zip(generation_keys, raw_outputs):
-        case = case_by_id[case_id]
-        if arm == "full_rewrite":
-            answer, valid, mode, span = raw.strip(), bool(raw.strip()), "full_answer", None
-            if not valid:
-                answer = case.baseline_answer
-            edit_ids = list(range(1, len(split_sentences(case.baseline_answer)) + 1))
-        else:
-            answer, valid, mode, span = parse_two_sentence_patch(raw, case.baseline_answer)
-            edit_ids = list(range(span[0], span[1] + 1)) if span else []
-        overlap_by_obligation = {
-            oid: bool(set(edit_ids) & set(case.witness_sentences[oid]))
-            for oid in OBLIGATION_IDS if case.expected_before[oid]
-        }
-        candidates.append(
-            {
-                "id": case_id, "scenario_id": case.scenario_id,
-                "failure_type": case.failure_type, "arm": arm,
-                "question": case.question, "evidence": case.evidence,
-                "target_id": case.target_id, "obligations": case.obligations,
-                "baseline_answer": case.baseline_answer, "raw_output": raw,
-                "answer": answer, "patch_valid": valid, "parse_mode": mode,
-                "sentence_span": list(span) if span else None,
-                "edit_sentence_ids": edit_ids,
-                "edit_ratio": edit_ratio(case.baseline_answer, answer),
-                "frozen_witnesses": {k: list(v) for k, v in case.witness_sentences.items()},
-                "overlap_by_obligation": overlap_by_obligation,
+        candidates = []
+        for (case_id, arm), raw in zip(generation_keys, raw_outputs):
+            case = case_by_id[case_id]
+            if arm == "full_rewrite":
+                answer, valid, mode, span = raw.strip(), bool(raw.strip()), "full_answer", None
+                if not valid:
+                    answer = case.baseline_answer
+                edit_ids = list(range(1, len(split_sentences(case.baseline_answer)) + 1))
+            else:
+                answer, valid, mode, span = parse_two_sentence_patch(raw, case.baseline_answer)
+                edit_ids = list(range(span[0], span[1] + 1)) if span else []
+            overlap_by_obligation = {
+                oid: bool(set(edit_ids) & set(case.witness_sentences[oid]))
+                for oid in OBLIGATION_IDS if case.expected_before[oid]
             }
-        )
+            candidates.append(
+                {
+                    "id": case_id, "scenario_id": case.scenario_id,
+                    "failure_type": case.failure_type, "arm": arm,
+                    "question": case.question, "evidence": case.evidence,
+                    "target_id": case.target_id, "obligations": case.obligations,
+                    "baseline_answer": case.baseline_answer, "raw_output": raw,
+                    "answer": answer, "patch_valid": valid, "parse_mode": mode,
+                    "sentence_span": list(span) if span else None,
+                    "edit_sentence_ids": edit_ids,
+                    "edit_ratio": edit_ratio(case.baseline_answer, answer),
+                    "frozen_witnesses": {k: list(v) for k, v in case.witness_sentences.items()},
+                    "overlap_by_obligation": overlap_by_obligation,
+                }
+            )
 
     control_specs: list[tuple[str, str]] = []
     judge_prompts: list[str] = []
@@ -478,6 +496,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "protocol": PROTOCOL,
         "generator_model": args.generator_model,
         "judge_model": args.judge_model,
+        "candidate_source": str(args.reuse_candidates) if args.reuse_candidates else "fresh_generation",
         "n_scenarios": len(SCENARIOS), "n_instances": len(cases),
         "n_candidates": len(candidates), "control": control_report,
         "arm_summaries": summaries,
@@ -524,6 +543,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--judge-batch-size", type=int, default=4)
     parser.add_argument("--generation-cap", type=int, default=512)
     parser.add_argument("--judge-cap", type=int, default=384)
+    parser.add_argument("--reuse-candidates", type=Path)
     parser.add_argument("--out-dir", type=Path, required=True)
     return parser.parse_args()
 

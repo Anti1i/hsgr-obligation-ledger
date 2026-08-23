@@ -77,6 +77,8 @@ class WitnessInterferenceP0gTests(unittest.TestCase):
         prompt = judge_prompt(case, case.baseline_answer)
         for oid in OBLIGATION_IDS:
             self.assertIn(oid, prompt)
+        self.assertIn("never silently repair", prompt)
+        self.assertIn("attaches [B]", prompt)
         for arm in ARMS:
             self.assertTrue(repair_prompt(case, arm))
 
