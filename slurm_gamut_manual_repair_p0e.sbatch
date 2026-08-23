@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=hsgr-gamut-p0e
 #SBATCH --partition=gpu
-#SBATCH --gres=gpu:h100-47:1
+#SBATCH --gres=gpu:h100-96:1
 #SBATCH --cpus-per-task=12
 #SBATCH --mem=72G
 #SBATCH --time=00:45:00
@@ -28,4 +28,3 @@ bash run_gamut_manual_repair_p0e.sh 2>&1 | tee "$PROJECT_SCR/logs/gamut_manual_r
 RC=${PIPESTATUS[0]}
 echo "JOB_DONE rc=$RC"
 exit "$RC"
-
