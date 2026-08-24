@@ -5,7 +5,7 @@
 The frozen P0h job completed normally but failed its apparatus gates:
 
 - verifier parse validity was 95.8%, positive accuracy 95.6%, and negative accuracy 91.7%;
-- 17/18 entangled sentence patches were rejected because the model returned sentence index 2 even
+- 18/18 entangled sentence patches were rejected because the model returned sentence index 2 even
   though the semicolon-coordinated answer contained only numbered sentence `[S1]`;
 - consequently, only one content block had successful sentence patches in both layouts.
 
