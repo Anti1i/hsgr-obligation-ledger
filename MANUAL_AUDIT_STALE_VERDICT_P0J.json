@@ -1,0 +1,24 @@
+{
+  "job_id": 753073,
+  "audit_date": "2026-08-24",
+  "candidate_positive_count": 36,
+  "confirmed_stale_count": 26,
+  "candidate_positive_false_count": 10,
+  "frozen_negative_sample_count": 36,
+  "frozen_negative_sample_confirmed_non_stale": 36,
+  "false_positive_transition_ids": [
+    "hospital-ordering|target_sentence|qwen3_8b|O10",
+    "school-attribution|target_sentence|qwen3_8b|O05",
+    "school-attribution|free_patch|qwen3_8b|O05",
+    "datacenter-attribution|target_sentence|qwen3_8b|O04",
+    "library-numeric|target_sentence|qwen3_8b|O11",
+    "library-numeric|free_patch|qwen3_8b|O11",
+    "wildfire-numeric|target_sentence|qwen3_8b|O10",
+    "wildfire-numeric|free_patch|qwen3_8b|O10",
+    "wildfire-ordering|target_sentence|qwen3_8b|O04",
+    "wildfire-ordering|free_patch|qwen3_8b|O04"
+  ],
+  "false_positive_reason": "The revised answer fused two findings without terminal punctuation, but the audited obligation remained explicitly stated. The 14B verifier treated the sentence-boundary defect as semantic omission.",
+  "negative_sample_result": "All 36 frozen candidate-negative rows retained an exact or unambiguous statement of the audited obligation.",
+  "label_rule": "All other candidate positives are confirmed stale; all candidate negatives retain their candidate non-stale label, with the frozen 36-row negative sample manually confirmed."
+}
