@@ -24,7 +24,7 @@ export HF_HUB_OFFLINE=0 TRANSFORMERS_OFFLINE=0 TOKENIZERS_PARALLELISM=false
 
 "$PY" -X utf8 -m unittest -v test_qwen3_non_thinking.py test_refinebench_revision_audit_p0n.py
 "$PY" -X utf8 refinebench_revision_audit_p0n.py \
-  --generator-models Qwen/Qwen3-8B Qwen/Qwen2.5-14B-Instruct \
+  --generator-models Qwen/Qwen3-8B \
   --judge-model Qwen/Qwen2.5-14B-Instruct \
   --n-per-stratum 8 --generation-batch-size 1 --generation-cap 2048 \
   --judge-batch-size 4 --judge-cap 256 \

@@ -52,11 +52,13 @@ resample based on initial model success or failure.
 
 ### Models
 
-- generators: Qwen3-8B non-thinking and Qwen2.5-14B-Instruct;
-- local checklist judge: Qwen2.5-14B-Instruct.
+- generator: Qwen3-8B non-thinking;
+- independent local checklist judge: Qwen2.5-14B-Instruct.
 
-The Qwen2.5 generator is judged by the same checkpoint and is descriptive
-only. Cross-generator robustness cannot be claimed from that cell.
+P0n0 is an apparatus and signal-presence pilot, not a model comparison. A
+second, stronger generator is added only if the frozen scale gate passes; this
+avoids spending the pilot budget on a cell that cannot affect the stop/scale
+decision.
 
 ### Revision arms
 

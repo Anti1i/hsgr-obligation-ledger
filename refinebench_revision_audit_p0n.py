@@ -23,7 +23,7 @@ DATASET_NAME = "RefineBench/RefineBench"
 DATASET_REVISION = "2777137e7c489f5049608f41d2432326429ea619"
 SEED = 20260824
 ARMS = ("guided_failed", "targeted_partial_failed")
-DEFAULT_GENERATORS = ("Qwen/Qwen3-8B", "Qwen/Qwen2.5-14B-Instruct")
+DEFAULT_GENERATORS = ("Qwen/Qwen3-8B",)
 DEFAULT_JUDGE = "Qwen/Qwen2.5-14B-Instruct"
 STRATA = ("math_statistics", "stem", "law", "humanities", "other")
 
