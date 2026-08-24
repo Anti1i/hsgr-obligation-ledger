@@ -18,7 +18,9 @@ export HF_DATASETS_CACHE="${HSGR_DATASET_CACHE:-$PROJECT_SCR/hf_datasets}"
 export TORCH_HOME="${HSGR_TORCH_HOME:-$RUNTIME_SCR/torch}"
 export XDG_CACHE_HOME="${HSGR_XDG_CACHE_HOME:-$RUNTIME_SCR/xdg}"
 export TMPDIR="$PROJECT_SCR/tmp"
-export TRANSFORMERS_OFFLINE=1 TOKENIZERS_PARALLELISM=false
+# RefineBench data must be fetched at its frozen revision on the first run.
+# Model weights are already present in the project cache and are checked above.
+export HF_HUB_OFFLINE=0 TRANSFORMERS_OFFLINE=0 TOKENIZERS_PARALLELISM=false
 
 "$PY" -X utf8 -m unittest -v test_qwen3_non_thinking.py test_refinebench_revision_audit_p0n.py
 "$PY" -X utf8 refinebench_revision_audit_p0n.py \
