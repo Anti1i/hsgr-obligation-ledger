@@ -154,6 +154,13 @@ class ModelRunner:
         except Exception:
             pass
         self.torch = torch
+        self.model_id = model_id
+        # Qwen3 exposes a reasoning mode in its chat template.  Structured
+        # experimental outputs must use the directly comparable non-thinking
+        # path; Qwen2.5 and other tokenizers do not accept this keyword.
+        self.chat_template_kwargs = (
+            {"enable_thinking": False} if model_id.startswith("Qwen/Qwen3") else {}
+        )
         self.tokenizer = AutoTokenizer.from_pretrained(model_id, use_fast=True)
         if self.tokenizer.pad_token_id is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -176,7 +183,8 @@ class ModelRunner:
 
     def chat_text(self, prompt: str) -> str:
         return self.tokenizer.apply_chat_template(
-            [{"role": "user", "content": prompt}], tokenize=False, add_generation_prompt=True
+            [{"role": "user", "content": prompt}], tokenize=False,
+            add_generation_prompt=True, **self.chat_template_kwargs
         )
 
     def extract_selector(
