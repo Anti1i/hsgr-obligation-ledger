@@ -53,12 +53,20 @@ def main() -> None:
     parser.add_argument("review_jsonl", type=Path)
     parser.add_argument("--case-id")
     parser.add_argument("--arm")
+    parser.add_argument(
+        "--review-type",
+        choices=("candidate_yes_to_no", "yes_to_yes_control", "all"),
+        default="candidate_yes_to_no",
+    )
     parser.add_argument("--top", type=int, default=3)
     parser.add_argument("--max-chars", type=int, default=700)
     args = parser.parse_args()
 
     rows = [json.loads(line) for line in args.review_jsonl.open(encoding="utf-8")]
-    candidates = [row for row in rows if row["review_type"] == "candidate_yes_to_no"]
+    candidates = [
+        row for row in rows
+        if args.review_type == "all" or row["review_type"] == args.review_type
+    ]
     if args.case_id:
         candidates = [row for row in candidates if row["case_id"] == args.case_id]
     if args.arm:
@@ -73,7 +81,7 @@ def main() -> None:
         diff = first["diff_aids"]
         print("=" * 100)
         print(
-            f"{case_id} | {arm} | {first['field']} | candidates={len(group)} | "
+            f"{case_id} | {arm} | {first['field']} | {first['review_type']}={len(group)} | "
             f"chars={len(first['old_answer'])}->{len(first['new_answer'])} | "
             f"similarity={diff['sequence_similarity']:.3f} | "
             f"exact_sentence_preserved={diff['preserved_old_sentence_fraction']:.3f}"
