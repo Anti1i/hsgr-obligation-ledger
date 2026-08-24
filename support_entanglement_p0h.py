@@ -18,6 +18,7 @@ from gamut_process_repair_p0b import release_runner, split_sentences
 
 
 PROTOCOL = "EXPERIMENT_PROTOCOL_SUPPORT_ENTANGLEMENT_P0H.md"
+PROTOCOL_R1 = "EXPERIMENT_PROTOCOL_SUPPORT_ENTANGLEMENT_P0H_R1.md"
 OBLIGATION_IDS = ("O_LEFT", "O_TARGET", "O_RIGHT")
 LAYOUTS = ("entangled", "disentangled")
 ARMS = ("sentence_patch", "full_rewrite")
@@ -253,7 +254,11 @@ def numbered(answer: str) -> str:
     return "\n".join(f"[S{i}] {text}" for i, text in enumerate(split_sentences(answer), 1))
 
 
-def repair_prompt(case: PairedCase, arm: str) -> str:
+def target_sentence_id(case: PairedCase) -> int:
+    return 1 if case.layout == "entangled" else 2
+
+
+def repair_prompt(case: PairedCase, arm: str, forced_target_unit: bool = False) -> str:
     preserved = "\n".join(
         f"- {oid}: {case.obligations[oid]}" for oid in ("O_LEFT", "O_RIGHT")
     )
@@ -263,14 +268,26 @@ def repair_prompt(case: PairedCase, arm: str) -> str:
         f"Already-satisfied requirements that must remain true:\n{preserved}\n\n"
     )
     if arm == "sentence_patch":
-        task = (
-            "Saved answer split into numbered sentences:\n"
-            f"{numbered(case.baseline_answer)}\n\nTask:\n"
-            "Return exactly one JSON object with start_sentence, end_sentence, and replacement. "
-            "Replace exactly one source sentence: start_sentence and end_sentence must be the "
-            "same one-based integer. Fix O_TARGET with the smallest replacement while preserving "
-            "O_LEFT and O_RIGHT. Return no markdown or explanation."
-        )
+        if forced_target_unit:
+            sid = target_sentence_id(case)
+            task = (
+                "Saved answer split into numbered sentences:\n"
+                f"{numbered(case.baseline_answer)}\n\nTask:\n"
+                f"The program will replace the entire source sentence [S{sid}], which contains "
+                "O_TARGET. Return exactly one JSON object with the single field replacement. "
+                f"replacement must be the complete revised text for [S{sid}], not a fragment or "
+                "a sentence index. Fix O_TARGET while preserving O_LEFT and O_RIGHT. Return no "
+                "markdown or explanation."
+            )
+        else:
+            task = (
+                "Saved answer split into numbered sentences:\n"
+                f"{numbered(case.baseline_answer)}\n\nTask:\n"
+                "Return exactly one JSON object with start_sentence, end_sentence, and replacement. "
+                "Replace exactly one source sentence: start_sentence and end_sentence must be the "
+                "same one-based integer. Fix O_TARGET with the smallest replacement while preserving "
+                "O_LEFT and O_RIGHT. Return no markdown or explanation."
+            )
     elif arm == "full_rewrite":
         task = (
             f"Saved answer:\n{case.baseline_answer}\n\nTask:\n"
@@ -323,9 +340,52 @@ def parse_one_sentence_patch(
     return " ".join(revised), True, "valid", (first, last)
 
 
-def judge_prompt(case: PairedCase, answer: str) -> str:
+def parse_forced_sentence_replacement(
+    text: str, answer: str, sentence_id: int
+) -> tuple[str, bool, str, tuple[int, int] | None]:
+    stripped = text.strip()
+    if "```" in stripped:
+        import re
+        match = re.search(r"```(?:json)?\s*([\s\S]*?)```", stripped, re.IGNORECASE)
+        if match:
+            stripped = match.group(1).strip()
+    start, end = stripped.find("{"), stripped.rfind("}")
+    if start < 0 or end < start:
+        return answer, False, "no_json", None
+    try:
+        value = json.loads(stripped[start : end + 1])
+    except json.JSONDecodeError:
+        return answer, False, "invalid_json", None
+    if not isinstance(value, dict) or set(value) != {"replacement"}:
+        return answer, False, "wrong_fields", None
+    replacement = value["replacement"]
+    sentences = split_sentences(answer)
+    if not 1 <= sentence_id <= len(sentences):
+        raise ValueError(f"frozen target sentence out of range: {sentence_id}")
+    if not isinstance(replacement, str) or not replacement.strip():
+        return answer, False, "empty_replacement", None
+    if len(replacement.split()) > 120:
+        return answer, False, "replacement_too_long", None
+    revised = sentences[: sentence_id - 1] + [replacement.strip()] + sentences[sentence_id:]
+    return " ".join(revised), True, "valid", (sentence_id, sentence_id)
+
+
+def judge_prompt(case: PairedCase, answer: str, strict: bool = False) -> str:
     requirements = "\n".join(
         f"- {oid}: {case.obligations[oid]}" for oid in OBLIGATION_IDS
+    )
+    schema = (
+        "For every item, id must be the exact requirement ID, met must be the JSON boolean true or "
+        "false (never a list, number, or string), and witness_sentences must be a JSON list of "
+        "integer IDs such as [1] (never strings such as [\"S1\"]). "
+        if strict else ""
+    )
+    visible_target = (
+        "For O_TARGET, compare the wording visibly present in the ANSWER with the requirement. A "
+        "wrong number, a wrong source label, or a reversed event order is false even when the fixed "
+        "evidence reveals the correct statement; never use the evidence to silently repair what "
+        "the answer says. "
+        if strict else ""
     )
     return (
         "Judge what the answer visibly states against the fixed evidence. Do not infer or silently "
@@ -333,7 +393,7 @@ def judge_prompt(case: PairedCase, answer: str) -> str:
         "JSON object with field items. items must contain three objects in the requirement order, "
         "each with fields id, met, and witness_sentences. A true item needs one or more one-based "
         "answer sentence IDs that directly state it; a false item must have an empty witness list. "
-        "Return no markdown or explanation.\n\n"
+        f"{schema}{visible_target}Return no markdown or explanation.\n\n"
         f"Question: {case.question}\n\nFixed evidence:\n{case.evidence}\n\n"
         f"Answer sentences:\n{numbered(answer)}\n\nRequirements:\n{requirements}\n\nJSON:"
     )
@@ -473,8 +533,12 @@ def hash_key(text: str) -> str:
 def run(args: argparse.Namespace) -> dict[str, Any]:
     cases = build_cases()
     case_by_id = {case.id: case for case in cases}
+    r1 = args.apparatus_revision == "r1"
     generation_keys = [(case.id, arm) for case in cases for arm in ARMS]
-    prompts = [repair_prompt(case_by_id[case_id], arm) for case_id, arm in generation_keys]
+    prompts = [
+        repair_prompt(case_by_id[case_id], arm, forced_target_unit=r1)
+        for case_id, arm in generation_keys
+    ]
 
     generator = ModelRunner(args.generator_model)
     raw_outputs = generator.generate(prompts, args.generation_batch_size, args.generation_cap)
@@ -485,7 +549,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         case = case_by_id[case_id]
         source_sentences = split_sentences(case.baseline_answer)
         if arm == "sentence_patch":
-            answer, valid, mode, span = parse_one_sentence_patch(raw, case.baseline_answer)
+            if r1:
+                answer, valid, mode, span = parse_forced_sentence_replacement(
+                    raw, case.baseline_answer, target_sentence_id(case)
+                )
+            else:
+                answer, valid, mode, span = parse_one_sentence_patch(raw, case.baseline_answer)
             edit_ids = [span[0]] if span else []
         else:
             answer, valid, mode, span = raw.strip(), bool(raw.strip()), "full_answer", None
@@ -515,8 +584,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     for case in cases:
         for kind, answer in (("baseline", case.baseline_answer), ("clean", case.clean_answer)):
             control_specs.append((case.id, kind))
-            judge_prompts.append(judge_prompt(case, answer))
-    judge_prompts.extend(judge_prompt(case_by_id[row["id"]], row["answer"]) for row in candidates)
+            judge_prompts.append(judge_prompt(case, answer, strict=r1))
+    judge_prompts.extend(
+        judge_prompt(case_by_id[row["id"]], row["answer"], strict=r1) for row in candidates
+    )
 
     judge = ModelRunner(args.judge_model)
     raw_judgments = judge.generate(judge_prompts, args.judge_batch_size, args.judge_cap)
@@ -603,7 +674,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     review_rows = regressions + sampled
 
     report = {
-        "protocol": PROTOCOL, "generator_model": args.generator_model,
+        "protocol": PROTOCOL_R1 if r1 else PROTOCOL,
+        "apparatus_revision": args.apparatus_revision,
+        "generator_model": args.generator_model,
         "judge_model": args.judge_model, "n_content_blocks": len(BLOCKS),
         "n_layout_cases": len(cases), "n_candidates": len(candidates),
         "control": control, "layout_summaries": layout_summaries,
@@ -635,6 +708,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--judge-batch-size", type=int, default=4)
     parser.add_argument("--generation-cap", type=int, default=384)
     parser.add_argument("--judge-cap", type=int, default=320)
+    parser.add_argument("--apparatus-revision", choices=("original", "r1"), default="original")
     parser.add_argument("--out-dir", type=Path, required=True)
     return parser.parse_args()
 

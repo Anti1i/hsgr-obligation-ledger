@@ -11,10 +11,12 @@ from support_entanglement_p0h import (
     judge_prompt,
     operator_interaction_summary,
     paired_summary,
+    parse_forced_sentence_replacement,
     parse_judgment,
     parse_one_sentence_patch,
     repair_prompt,
     split_sentences,
+    target_sentence_id,
 )
 
 
@@ -58,6 +60,27 @@ class SupportEntanglementP0hTests(unittest.TestCase):
         for arm in ARMS:
             self.assertTrue(repair_prompt(case, arm))
 
+    def test_r1_forces_frozen_target_unit(self):
+        cases = build_cases()
+        entangled = next(case for case in cases if case.layout == "entangled")
+        disentangled = next(case for case in cases if case.layout == "disentangled")
+        self.assertEqual(target_sentence_id(entangled), 1)
+        self.assertEqual(target_sentence_id(disentangled), 2)
+        for case, marker in ((entangled, "[S1]"), (disentangled, "[S2]")):
+            prompt = repair_prompt(case, "sentence_patch", forced_target_unit=True)
+            self.assertIn(marker, prompt)
+            self.assertIn("single field replacement", prompt)
+            self.assertNotIn("start_sentence", prompt)
+
+    def test_r1_replacement_parser_applies_frozen_unit(self):
+        answer = "One. Wrong two. Three."
+        raw = json.dumps({"replacement": "Fixed two."})
+        revised, valid, mode, span = parse_forced_sentence_replacement(raw, answer, 2)
+        self.assertTrue(valid)
+        self.assertEqual(mode, "valid")
+        self.assertEqual(span, (2, 2))
+        self.assertEqual(revised, "One. Fixed two. Three.")
+
     def test_patch_parser_accepts_one_and_rejects_two(self):
         answer = "One. Two. Three."
         good = json.dumps({
@@ -86,6 +109,9 @@ class SupportEntanglementP0hTests(unittest.TestCase):
         self.assertEqual(tuple(parsed), OBLIGATION_IDS)
         prompt = judge_prompt(build_cases()[0], build_cases()[0].baseline_answer)
         self.assertIn("Do not infer or silently correct", prompt)
+        strict = judge_prompt(build_cases()[0], build_cases()[0].baseline_answer, strict=True)
+        self.assertIn("JSON boolean true or false", strict)
+        self.assertIn("reversed event order is false", strict)
 
     def test_exact_sign_probability(self):
         self.assertEqual(exact_one_sided_sign_p(0, 0), 1.0)
