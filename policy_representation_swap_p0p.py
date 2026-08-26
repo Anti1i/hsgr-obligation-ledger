@@ -300,6 +300,63 @@ def eligible_task(instance: dict[str, Any], query_char_limit: int) -> bool:
     )
 
 
+def selection_audit(
+    instances: list[dict[str, Any]], query_char_limit: int,
+) -> dict[str, Any]:
+    rows: dict[str, dict[str, Any]] = {}
+    for stratum in STRATA:
+        candidates = [
+            instance for instance in instances
+            if field_stratum(str(instance.get("field", ""))) == stratum
+        ]
+        funnel = {
+            "field_total": len(candidates),
+            "id_present_and_not_excluded": 0,
+            "checklist_count_5_to_12": 0,
+            "nonempty_checklist_items": 0,
+            "reference_present": 0,
+            "reference_chars_400_to_8000": 0,
+            "query_within_char_limit": 0,
+            "all_conditions": 0,
+        }
+        metadata = []
+        for instance in candidates:
+            checklist = [str(item).strip() for item in (instance.get("checklist") or [])]
+            reference = reference_answer_text(instance)
+            flags = {
+                "id_present_and_not_excluded": bool(
+                    str(instance.get("index", "")).strip()
+                    and instance.get("index") not in EXCLUDED_CASES
+                ),
+                "checklist_count_5_to_12": 5 <= len(checklist) <= 12,
+                "nonempty_checklist_items": bool(checklist and all(checklist)),
+                "reference_present": bool(reference),
+                "reference_chars_400_to_8000": bool(
+                    reference and 400 <= len(reference) <= 8000
+                ),
+                "query_within_char_limit": len(query_text(instance)) <= query_char_limit,
+            }
+            for name, value in flags.items():
+                funnel[name] += int(value)
+            valid = all(flags.values())
+            funnel["all_conditions"] += int(valid)
+            metadata.append({
+                "task_id": instance.get("index"),
+                "checklist_count": len(checklist),
+                "reference_chars": len(reference) if reference else 0,
+                "query_chars": len(query_text(instance)),
+                "eligible": valid,
+                "failed_conditions": [name for name, value in flags.items() if not value],
+            })
+        rows[stratum] = {"funnel_marginal_counts": funnel, "candidate_metadata": metadata}
+    return {
+        "dataset": DATASET_NAME,
+        "dataset_revision": DATASET_REVISION,
+        "query_char_limit": query_char_limit,
+        "strata": rows,
+    }
+
+
 def select_tasks(
     instances: list[dict[str, Any]], per_stratum: int, query_char_limit: int,
 ) -> list[dict[str, Any]]:
@@ -753,7 +810,13 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     dataset = load_dataset(
         DATASET_NAME, revision=DATASET_REVISION, split="train", cache_dir=str(args.dataset_cache)
     )
-    tasks = select_tasks(list(dataset), args.per_stratum, args.query_char_limit)
+    instances = list(dataset)
+    audit = selection_audit(instances, args.query_char_limit)
+    write_json(args.out_dir / "p0p_selection_audit.json", audit)
+    if args.selection_audit_only:
+        print(json.dumps(audit, ensure_ascii=False, indent=2), flush=True)
+        return audit
+    tasks = select_tasks(instances, args.per_stratum, args.query_char_limit)
     write_jsonl(args.out_dir / "p0p_selected_tasks.jsonl", tasks)
     model_specs = dict(MODEL_SPECS)
 
@@ -809,6 +872,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--answer-cap", type=int, default=1024)
     parser.add_argument("--judge-cap", type=int, default=384)
     parser.add_argument("--permutations", type=int, default=10000)
+    parser.add_argument("--selection-audit-only", action="store_true")
     return parser.parse_args()
 
 

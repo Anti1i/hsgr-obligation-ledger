@@ -7,6 +7,7 @@ from policy_representation_swap_p0p import (
     parse_structural_plan,
     parse_yes_no_lines,
     render_structural_plan,
+    selection_audit,
 )
 
 
@@ -83,6 +84,23 @@ class PolicyRepresentationSwapTests(unittest.TestCase):
         )
         self.assertEqual(report["decision"], "APPARATUS_FAILURE")
         self.assertFalse(report["apparatus_gates"]["all_evaluator_outputs_parse"])
+
+    def test_selection_audit_exposes_failed_filter(self):
+        instance = {
+            "index": "law-1",
+            "field": "Law",
+            "question": "Explain the issue.",
+            "checklist": [f"Criterion {index}" for index in range(5)],
+            "reference_answer": ["short"],
+        }
+        audit = selection_audit([instance], query_char_limit=1000)
+        law = audit["strata"]["law"]
+        self.assertEqual(law["funnel_marginal_counts"]["field_total"], 1)
+        self.assertEqual(law["funnel_marginal_counts"]["all_conditions"], 0)
+        self.assertIn(
+            "reference_chars_400_to_8000",
+            law["candidate_metadata"][0]["failed_conditions"],
+        )
 
 
 if __name__ == "__main__":
