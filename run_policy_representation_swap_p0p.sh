@@ -3,7 +3,7 @@ set -euo pipefail
 
 PROJECT_SCR="${HSGR_PROJECT_SCR:-/mnt/scratch/z/${USER}/hsgr-obligation-ledger}"
 RUNTIME_SCR="${HSGR_RUNTIME_SCR:-/mnt/scratch/z/${USER}/dch-hsgr}"
-PY="${HSGR_PYTHON:-$PROJECT_SCR/venv-p0p-v1/bin/python}"
+PY="${HSGR_PYTHON:-}"
 OUT_DIR="${POLICY_SWAP_P0P_OUT:-$PROJECT_SCR/results/policy_representation_swap_p0p_${SLURM_JOB_ID:-manual}}"
 DATASET_CACHE="${REFINEBENCH_CACHE:-$PROJECT_SCR/data/refinebench_cache}"
 

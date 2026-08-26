@@ -8,16 +8,25 @@
 
 set -euo pipefail
 PROJECT_SCR="${HSGR_PROJECT_SCR:-/mnt/scratch/z/${USER}/hsgr-obligation-ledger}"
-ENV_DIR="$PROJECT_SCR/venv-p0p-v1"
+ARCHIVE_DIR="$PROJECT_SCR/env"
+ARCHIVE="$ARCHIVE_DIR/venv-p0p-v1.tar"
+ARCHIVE_PART="$ARCHIVE.part-${SLURM_JOB_ID}"
 TMP_DIR="$PROJECT_SCR/tmp"
+LOCAL_ROOT="$(mktemp -d "/tmp/hsgr-p0p-build-${SLURM_JOB_ID}-XXXXXX")"
+ENV_DIR="$LOCAL_ROOT/venv"
 
-mkdir -p "$PROJECT_SCR/logs" "$TMP_DIR"
-echo "host=$(hostname) job=${SLURM_JOB_ID} env=$ENV_DIR"
-df -h "$PROJECT_SCR"
-if [ ! -x "$ENV_DIR/bin/python" ]; then
-  python3 -m venv "$ENV_DIR"
-fi
-export TMPDIR="$TMP_DIR" PIP_DISABLE_PIP_VERSION_CHECK=1
+cleanup() {
+  rm -rf -- "$LOCAL_ROOT"
+  rm -f -- "$ARCHIVE_PART"
+}
+trap cleanup EXIT
+
+mkdir -p "$PROJECT_SCR/logs" "$TMP_DIR" "$ARCHIVE_DIR"
+echo "host=$(hostname) job=${SLURM_JOB_ID} local_env=$ENV_DIR archive=$ARCHIVE"
+df -h /tmp "$PROJECT_SCR"
+python3 -m venv "$ENV_DIR"
+export TMPDIR="$LOCAL_ROOT/tmp" PIP_DISABLE_PIP_VERSION_CHECK=1
+mkdir -p "$TMPDIR"
 "$ENV_DIR/bin/python" -m pip install --no-cache-dir \
   torch==2.8.0 \
   numpy==2.2.6 \
@@ -44,4 +53,7 @@ print("datasets", datasets.__version__)
 print("accelerate", accelerate.__version__)
 PY
 du -sh "$ENV_DIR"
+tar -C "$LOCAL_ROOT" -cf "$ARCHIVE_PART" venv
+mv -f "$ARCHIVE_PART" "$ARCHIVE"
+sha256sum "$ARCHIVE"
 echo "ENV_SETUP_DONE"

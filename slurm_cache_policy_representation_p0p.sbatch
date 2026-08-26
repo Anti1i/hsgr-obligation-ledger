@@ -11,7 +11,10 @@ REPO="${HSGR_REPO:-$HOME/hsgr-obligation-ledger}"
 PROJECT_SCR="${HSGR_PROJECT_SCR:-/mnt/scratch/z/${USER}/hsgr-obligation-ledger}"
 RUNTIME_SCR="${HSGR_RUNTIME_SCR:-/mnt/scratch/z/${USER}/dch-hsgr}"
 WORK="$PROJECT_SCR/work-${SLURM_JOB_NAME}-${SLURM_JOB_ID}"
-PY="${HSGR_PYTHON:-$PROJECT_SCR/venv-p0p-v1/bin/python}"
+source "$REPO/prepare_policy_representation_env_p0p.sh"
+p0p_prepare_env "$PROJECT_SCR" || exit 1
+trap p0p_cleanup_env EXIT
+PY="$P0P_ENV_PYTHON"
 
 [ -x "$PY" ] || { echo "FATAL: no project Python at $PY"; exit 1; }
 mkdir -p "$WORK" "$PROJECT_SCR/tmp" "$PROJECT_SCR/logs" \
