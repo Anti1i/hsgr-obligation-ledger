@@ -12,7 +12,7 @@ REPO="${HSGR_REPO:-$HOME/hsgr-obligation-ledger}"
 PROJECT_SCR="${HSGR_PROJECT_SCR:-/mnt/scratch/z/${USER}/hsgr-obligation-ledger}"
 RUNTIME_SCR="${HSGR_RUNTIME_SCR:-/mnt/scratch/z/${USER}/dch-hsgr}"
 WORK="$PROJECT_SCR/work-${SLURM_JOB_NAME}-${SLURM_JOB_ID}"
-PY="${HSGR_PYTHON:-$RUNTIME_SCR/venv/bin/python}"
+PY="${HSGR_PYTHON:-$PROJECT_SCR/venv-p0p-v1/bin/python}"
 
 [ -x "$PY" ] || { echo "FATAL: no project Python at $PY"; exit 1; }
 [ -n "${CUDA_VISIBLE_DEVICES:-}" ] || { echo "FATAL: no Slurm GPU allocation"; exit 1; }

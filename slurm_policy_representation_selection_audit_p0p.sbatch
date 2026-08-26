@@ -10,7 +10,7 @@ set -euo pipefail
 REPO="${HSGR_REPO:-$HOME/hsgr-obligation-ledger}"
 PROJECT_SCR="${HSGR_PROJECT_SCR:-/mnt/scratch/z/${USER}/hsgr-obligation-ledger}"
 RUNTIME_SCR="${HSGR_RUNTIME_SCR:-/mnt/scratch/z/${USER}/dch-hsgr}"
-PY="${HSGR_PYTHON:-$RUNTIME_SCR/venv/bin/python}"
+PY="${HSGR_PYTHON:-$PROJECT_SCR/venv-p0p-v1/bin/python}"
 OUT_DIR="$PROJECT_SCR/results/policy_representation_selection_audit_p0p_${SLURM_JOB_ID}"
 
 [ -x "$PY" ] || { echo "FATAL: no project Python at $PY"; exit 1; }
