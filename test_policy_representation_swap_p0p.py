@@ -98,7 +98,7 @@ class PolicyRepresentationSwapTests(unittest.TestCase):
         self.assertEqual(law["funnel_marginal_counts"]["field_total"], 1)
         self.assertEqual(law["funnel_marginal_counts"]["all_conditions"], 0)
         self.assertIn(
-            "reference_chars_400_to_8000",
+            "reference_chars_within_bounds",
             law["candidate_metadata"][0]["failed_conditions"],
         )
 

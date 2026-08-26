@@ -32,6 +32,8 @@ MODEL_SPECS = {
     "olmo": "allenai/OLMo-2-1124-7B-Instruct",
 }
 DEFAULT_JUDGE = "Qwen/Qwen2.5-14B-Instruct"
+REFERENCE_CHAR_MIN = 400
+REFERENCE_CHAR_MAX = 12000
 EXCLUDED_CASES = {
     "refinebench-000010", "refinebench-000100", "refinebench-000147",
     "refinebench-000347", "refinebench-000577", "refinebench-000581",
@@ -295,7 +297,7 @@ def eligible_task(instance: dict[str, Any], query_char_limit: int) -> bool:
         and 5 <= len(checklist) <= 12
         and all(checklist)
         and reference
-        and 400 <= len(reference) <= 8000
+        and REFERENCE_CHAR_MIN <= len(reference) <= REFERENCE_CHAR_MAX
         and len(query_text(instance)) <= query_char_limit
     )
 
@@ -315,7 +317,7 @@ def selection_audit(
             "checklist_count_5_to_12": 0,
             "nonempty_checklist_items": 0,
             "reference_present": 0,
-            "reference_chars_400_to_8000": 0,
+            "reference_chars_within_bounds": 0,
             "query_within_char_limit": 0,
             "all_conditions": 0,
         }
@@ -331,8 +333,9 @@ def selection_audit(
                 "checklist_count_5_to_12": 5 <= len(checklist) <= 12,
                 "nonempty_checklist_items": bool(checklist and all(checklist)),
                 "reference_present": bool(reference),
-                "reference_chars_400_to_8000": bool(
-                    reference and 400 <= len(reference) <= 8000
+                "reference_chars_within_bounds": bool(
+                    reference
+                    and REFERENCE_CHAR_MIN <= len(reference) <= REFERENCE_CHAR_MAX
                 ),
                 "query_within_char_limit": len(query_text(instance)) <= query_char_limit,
             }
@@ -353,6 +356,7 @@ def selection_audit(
         "dataset": DATASET_NAME,
         "dataset_revision": DATASET_REVISION,
         "query_char_limit": query_char_limit,
+        "reference_char_bounds": [REFERENCE_CHAR_MIN, REFERENCE_CHAR_MAX],
         "strata": rows,
     }
 

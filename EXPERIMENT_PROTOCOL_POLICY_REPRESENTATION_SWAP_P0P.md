@@ -17,7 +17,7 @@ or evaluator bias.  The controlled matrix below is the decisive test.
 - Ten fresh long-answer tasks: two deterministic selections from each of five
   strata (math/statistics, STEM, law, humanities/social science, other).
 - Exclude the eight P0o rescue cases.
-- Require 5--12 canonical requirements, a reference answer of at least 400
+- Require 5--12 canonical requirements, a reference answer of 400--12,000
   characters, and a query of at most 8,000 characters.
 - Policies/checklist authors (similar 7--8B scale, different model families):
   `Qwen/Qwen3-8B`, `mistralai/Mistral-7B-Instruct-v0.3`, and
@@ -49,6 +49,17 @@ variance from this small screen.
 
 Total answer generations: `10 * 3 * (3 native + 3 structural + 1 canonical) =
 210`.
+
+### P0p-A1 feasibility amendment (before model generation)
+
+The first scheduled run stopped during deterministic task selection and loaded
+no language model.  Its frozen 8,000-character reference-answer ceiling left
+only one eligible law task.  A CPU-only funnel audit (job `759478`) found 142
+law tasks and 52 with 5--12 canonical requirements; the dominant exclusion was
+reference length, not missing data or reuse of excluded P0o cases.  Before any
+answer or representation generation, the uniform reference ceiling was raised
+once to 12,000 characters.  All other selection rules, seed, gates, and models
+remain frozen.
 
 ## Evaluation
 
