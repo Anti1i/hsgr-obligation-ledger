@@ -24,18 +24,18 @@ MODEL_FILE_PATTERNS = [
 ]
 
 
-def run(hf_home: Path, dataset_cache: Path) -> None:
+def run(hf_cache: Path, dataset_cache: Path) -> None:
     from datasets import load_dataset
     from huggingface_hub import snapshot_download
 
-    hf_home.mkdir(parents=True, exist_ok=True)
+    hf_cache.mkdir(parents=True, exist_ok=True)
     dataset_cache.mkdir(parents=True, exist_ok=True)
     model_ids = [*MODEL_SPECS.values(), DEFAULT_JUDGE]
     for model_id in model_ids:
         print(f"[cache-model] {model_id}", flush=True)
         snapshot_download(
             repo_id=model_id,
-            cache_dir=str(hf_home),
+            cache_dir=str(hf_cache),
             allow_patterns=MODEL_FILE_PATTERNS,
         )
     print(f"[cache-dataset] {DATASET_NAME}@{DATASET_REVISION}", flush=True)
@@ -50,11 +50,14 @@ def run(hf_home: Path, dataset_cache: Path) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--hf-home", type=Path, required=True)
+    parser.add_argument(
+        "--hf-cache", type=Path, required=True,
+        help="Hugging Face Hub cache directory (normally $HF_HOME/hub)",
+    )
     parser.add_argument("--dataset-cache", type=Path, required=True)
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    run(args.hf_home, args.dataset_cache)
+    run(args.hf_cache, args.dataset_cache)

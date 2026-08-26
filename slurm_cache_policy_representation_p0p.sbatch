@@ -27,7 +27,7 @@ export XDG_CACHE_HOME="${HSGR_XDG_CACHE_HOME:-$RUNTIME_SCR/xdg}"
 export TMPDIR="$PROJECT_SCR/tmp"
 export TOKENIZERS_PARALLELISM=false
 "$PY" -X utf8 cache_policy_representation_models_p0p.py \
-  --hf-home "$HF_HOME" \
+  --hf-cache "$HF_HOME/hub" \
   --dataset-cache "$PROJECT_SCR/data/refinebench_cache" 2>&1 | \
   tee "$PROJECT_SCR/logs/policy_representation_p0p_cache_${SLURM_JOB_ID}.txt"
 RC=${PIPESTATUS[0]}
